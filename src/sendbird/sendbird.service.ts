@@ -2,6 +2,7 @@ import * as SendBird from 'sendbird';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { UserRole } from '../users/dto/create-user.dto';
+import axios from 'axios';
 
 interface SendbirdUserMetadata {
   role?: UserRole;
@@ -14,7 +15,7 @@ export class SendbirdService {
   private readonly logger = new Logger(SendbirdService.name);
 
   constructor(private configService: ConfigService) {
-    this.sb = new SendBird({ appId: this.configService.get<string>('sendbird.appId')! });
+    this.sb = new SendBird({ appId: this.configService.get<string>('sendbird.appId')!,  });
   }
 
   async generateUniqueUserId(name: string): Promise<string> {
@@ -38,28 +39,83 @@ export class SendbirdService {
           }
 
           // Store metadata with proper typing
-          const metadata: SendbirdUserMetadata = { role, email };
-          user.metaData = metadata;
+         this.sb.currentUser.createMetaData({ role, email });  
           resolve(user);
         });
       });
     });
   }
 
-  async getUserById(userId: string): Promise<SendBird.User> {
-    return new Promise((resolve, reject) => {
-      this.sb.connect(userId, (user, error) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-        resolve(user);
-      });
+  getCurrentUser(){
+    return this.sb.currentUser;
+  }
+
+  async getUserById(userId: string): Promise<any> {
+    const user = await axios.get(`https://api-${this.configService.get<string>('sendbird.appId')!}.sendbird.com/v3/users/${userId}`, {
+      headers: {
+        'Api-Token': this.configService.get<string>('sendbird.apiToken')!,
+      },
     });
+    if(user.data.error === true && user.data.code === 400201){
+      return null;
+    } 
+    return user.data;
+  }
+
+  async reconnect(){
+    this.sb.reconnect();
+  }
+
+  async getUserSessions(userId: string): Promise<any> { 
+    try {
+      const response = await axios.post(
+        `https://api-${this.configService.get<string>('sendbird.appId')!}.sendbird.com/v3/users/${userId}/token`,
+        {},
+        {
+          headers: {
+            'Api-Token': this.configService.get<string>('sendbird.apiToken')!,
+          },
+        },
+      );
+      return response.data.token;
+    } catch (error) { 
+      console.error(
+        'Error generating Sendbird session token:',
+        error.response ? error.response.data : error.message,
+      );  
+      return null;
+    }
+    }
+
+  async getUserByEmail(name:string, email:string): Promise<any> {
+    try {
+      const token  = await this.getUserSessions(name);
+      if(token){
+        const user =  await this.sb.connect(name,token, (user, error) => { 
+          if (error) {
+            return error;
+          }
+          return user;
+        });
+        this.configService.set(name,{email, user, token: token} );
+        return {...user, accessToken:token};
+      }
+    } catch (error) {
+      console.error(
+        'Error generating Sendbird session token:',
+        error.response ? error.response.data : error.message,
+      );
+      return null;
+    }
   }
 
   async createClientAttorneyChannel(clientId: string, attorneyId: string) {
     return new Promise<SendBird.GroupChannel>((resolve, reject) => {
+      this.sb.connect(clientId, (user, error) => {
+         if (error) {
+           reject(error);
+           return;
+         }
       const params = new this.sb.GroupChannelParams();
       params.addUserIds([clientId, attorneyId]);
       params.isDistinct = true;
@@ -71,12 +127,21 @@ export class SendbirdService {
           return;
         }
         resolve(groupChannel);
-      });
+      })});
     });
   }
 
   async sendMessage(channelUrl: string, userId: string, message: string, fileUrl?: string) {
+    let sessionToken = this.configService.get(userId)?.accessToken;
+    if (!sessionToken) {
+      sessionToken = await this.getUserSessions(userId);
+    }
     return new Promise<SendBird.UserMessage>((resolve, reject) => {
+      this.sb.connect(userId, sessionToken ,(user, error) => {
+         if (error) {
+           reject(error);
+           return;
+         }
       this.sb.GroupChannel.getChannel(channelUrl, (groupChannel, error) => {
         if (error) {
           reject(error);
@@ -96,7 +161,7 @@ export class SendbirdService {
           }
           resolve(userMessage);
         });
-      });
+      })});
     });
   }
 
@@ -216,24 +281,38 @@ export class SendbirdService {
     });
   }
 
-  async getGroupChannelMembers(channelUrl: string): Promise<SendBird.User[]> {
+  async getGroupChannelMembers(senderId: string, channelUrl:string): Promise<SendBird.User[]> {
+    let sessionToken = this.configService.get(senderId)?.accessToken;
+    if (!sessionToken) {
+      sessionToken = await this.getUserSessions(senderId);
+    }
     return new Promise((resolve, reject) => {
-      this.sb.GroupChannel.getChannel(channelUrl, (groupChannel, error) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-
-        const query = groupChannel.createMemberListQuery();
-        query.limit = 100;
-        query.next((members, error) => {
+      this.sb.connect(
+        senderId,
+        sessionToken,
+        (user, error) => {
           if (error) {
             reject(error);
             return;
           }
-          resolve(members);
-        });
-      });
+          this.sb.GroupChannel.getChannel(channelUrl, (groupChannel, error) => {
+            if (error) {
+              reject(error);
+              return;
+            }
+
+            const query = groupChannel.createMemberListQuery();
+            query.limit = 100;
+            query.next((members, error) => {
+              if (error) {
+                reject(error);
+                return;
+              }
+              resolve(members);
+            });
+          });
+        },
+      );
     });
   }
 
@@ -289,6 +368,25 @@ export class SendbirdService {
     }
   }
 
+  async saveMetaData(channel_type:string, channel_url:string, message_id:string, metadata: any): Promise<any> {  
+    try{
+      const appId = this.configService.get<string>('sendbird.appId')!;
+      const response = await axios.post(
+        `https://https://api-${appId}.sendbird.com/v3/${channel_type}/${channel_url}/messages/${message_id}/sorted_metaarray`,
+        {
+          sorted_metaarray: metadata,
+        },
+      );
+      if(response.data.error ===  true && response.data.code === 400301){
+        return response.data;
+      }
+}
+  catch (error) {
+    this.logger.error(`Failed to save metadata: ${error.message}`, error.stack);
+    throw error;
+  }
+}
+
   async sendFileMessage(
     channelUrl: string,
     userId: string,
@@ -311,13 +409,18 @@ export class SendbirdService {
       });
       
       return await new Promise((resolve, reject) => {
+        this.sb.connect(userId, (user, error) => {
+         if (error) {
+           reject(error);
+           return;
+         }
         channel.sendFileMessage(params, (message, error) => {
           if (error) {
             reject(error);
             return;
           }
           resolve(message);
-        });
+        })});
       });
     } catch (error) {
       this.logger.error(`Failed to send file message: ${error.message}`, error.stack);

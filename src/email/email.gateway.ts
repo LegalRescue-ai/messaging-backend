@@ -2,6 +2,7 @@ import { WebSocketGateway, WebSocketServer, SubscribeMessage, OnGatewayConnectio
 import { Server, Socket } from 'socket.io';
 import { EmailRepliesService } from './email-replies.service';
 import { Logger } from '@nestjs/common';
+import { EmailService } from './email.service';
 
 @WebSocketGateway({
   cors: {
@@ -19,11 +20,11 @@ export class EmailGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
   @WebSocketServer()
   server: Server;
 
-  constructor(private readonly emailService: EmailRepliesService) {}
+  constructor(private readonly emailService: EmailService) {}
 
   afterInit(server: Server) {
     try {
-      this.emailService.setSocketServer(server);
+      this.emailService.authorizeGmailApi();
       this.logger.log('Email WebSocket Gateway initialized');
       
       // Send initial config to all connected clients
@@ -40,7 +41,7 @@ export class EmailGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
 
   handleConnection(client: Socket) {
     try {
-      this.logger.log(`Client connected: ${client.id}`);
+      this.logger.log(`Client connected: ${JSON.stringify(client.id)}`);
       
       // Send config to newly connected client
       client.emit('emailConfig', {
@@ -50,7 +51,7 @@ export class EmailGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         publicKey: process.env.EMAILJS_PUBLIC_KEY,
       });
       
-      this.emailService.handleConnection(client.id);
+      // this.emailService.sendEmail(client.id);
     } catch (error) {
       this.logger.error(`Error handling client connection ${client.id}:`, error);
     }
@@ -59,7 +60,7 @@ export class EmailGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
   handleDisconnect(client: Socket) {
     try {
       this.logger.log(`Client disconnected: ${client.id}`);
-      this.emailService.handleDisconnect(client.id);
+      // this.emailService.handleDisconnect(client.id);
     } catch (error) {
       this.logger.error(`Error handling client disconnect ${client.id}:`, error);
     }
@@ -69,7 +70,7 @@ export class EmailGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
   handleEmailSent(client: Socket, payload: any) {
     try {
       this.logger.debug(`Email sent event from ${client.id}:`, payload);
-      this.emailService.handleEmailSent(client.id, payload);
+      this.emailService.sendEmail(client.id, payload.email,JSON.stringify(payload));
       client.emit('emailProcessed', { success: true, emailId: payload.threadId });
     } catch (error) {
       this.logger.error(`Error handling email sent from ${client.id}:`, error);
@@ -81,7 +82,7 @@ export class EmailGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
   handleEmailError(client: Socket, payload: any) {
     try {
       this.logger.error(`Email error from ${client.id}:`, payload);
-      this.emailService.handleEmailError(client.id, payload);
+      // this.emailService.handleEmailError(client.id, payload);
       client.emit('emailProcessed', { success: false, error: payload.error });
     } catch (error) {
       this.logger.error(`Error handling email error from ${client.id}:`, error);
