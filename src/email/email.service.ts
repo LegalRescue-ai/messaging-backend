@@ -6,6 +6,7 @@ import * as path from 'path';
 import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { SendbirdService } from 'src/sendbird/sendbird.service';
+import { JSDOM } from 'jsdom';
 
 @Injectable()
 export class EmailService {
@@ -126,8 +127,7 @@ export class EmailService {
       } else if (payload.body && payload.body.data) {
         body = Buffer.from(payload.body.data, 'base64').toString('utf-8');
       }
-
-      return { messageId, sender, subject, body, attachments, threadId };
+      return { messageId, sender, subject, body:this.cleanEmailContent(body), attachments, threadId };
     } catch (error) {
       this.logger.error(
         `Error getting message ${messageId}: ${error.message}`,
@@ -160,6 +160,27 @@ async sendEmail(
       return null;
     }
   }
+
+  private cleanEmailContent(html:string) {
+  const dom = new JSDOM(html);
+  const document = dom.window.document;
+
+  // Remove elements with class 'gmail_quote'
+  const quotes = document.querySelectorAll('.gmail_quote');
+  quotes.forEach(el => el.remove());
+
+  // Replace <div> tags with newline-separated content
+  const divs = document.querySelectorAll('div');
+  divs.forEach(div => {
+    const textNode = document.createTextNode('\n' + div.textContent);
+    div.replaceWith(textNode);
+  });
+
+  // Extract all text (removing any other HTML tags)
+  let text = document.body.textContent || '';
+  return text.trim();
+}
+
 
   private createRawEmail(
     to: string,
@@ -210,10 +231,15 @@ async sendEmail(
       .replace(/=+$/, '');
   }
 
-  // @Cron(CronExpression.EVERY_MINUTE)
-  // async checkEmails(): Promise<void> {
-  //   this.logger.log('Checking emails...');
-  //   await this.authorizeGmailApi();
-  //   await this.receiveEmails();
-  // }
+  // Utility function for NestJS (non-browser environment)
+
+
+
+
+  @Cron(CronExpression.EVERY_MINUTE)
+  async checkEmails(): Promise<void> {
+    this.logger.log('Checking emails...');
+    await this.authorizeGmailApi();
+    await this.receiveEmails();
+  }
 }
