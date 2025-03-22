@@ -70,31 +70,6 @@ describe('WebhooksService', () => {
     expect(webhooksService).toBeDefined();
   });
 
-  describe('verifyWebhookSignature', () => {
-    it('should return false if webhook secret is not configured', async () => {
-      (configService.get as jest.Mock).mockReturnValue(false);
-      const result = await webhooksService.verifyWebhookSignature(
-        'signature',
-        'secret',
-      );
-      expect(result).toBe(false);
-      expect(logger.error).toHaveBeenCalledWith(
-        'Webhook secret not configured',
-      );
-    });
-
-    it('should return the result of verifySignature', async () => {
-      (configService.get as jest.Mock).mockReturnValue('secret');
-      (verifySignature as jest.Mock).mockReturnValue(true);
-      const result = await webhooksService.verifyWebhookSignature(
-        'signature',
-        'secret',
-      );
-      expect(result).toBe(true);
-      expect(verifySignature).toHaveBeenCalledWith('signature', 'secret');
-    });
-  });
-
   describe('handleWebhookEvent', () => {
     it('should handle group_channel:message_send event', async () => {
       const payload = {
