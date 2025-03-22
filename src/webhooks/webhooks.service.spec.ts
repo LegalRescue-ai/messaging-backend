@@ -1,134 +1,219 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { WebhooksService } from './webhooks.service';
-import { SendbirdService } from '../sendbird/sendbird.service';
-import { WebhookHandlerService } from './services/webhook-handler.service';
-import { WebhookEventType } from './interfaces/webhook-event.interface';
 import { ConfigService } from '@nestjs/config';
 import { EmailService } from '../email/email.service';
-import * as signatureUtil from './utils/signature.util';
+import axios from 'axios';
+import { verifySignature } from './utils/signature.util';
+import { Logger } from '@nestjs/common';
+import { SendbirdService } from 'src/sendbird/sendbird.service';
 
+jest.mock('axios');
 jest.mock('./utils/signature.util', () => ({
   verifySignature: jest.fn(),
 }));
 
 describe('WebhooksService', () => {
-  let service: WebhooksService;
-  let mockSendbird: Partial<SendbirdService>;
-  let mockWebhookHandler: Partial<WebhookHandlerService>;
-  let mockConfigService: { get: jest.Mock };
-  let mockEmailService: Partial<EmailService>;
+  let webhooksService: WebhooksService;
+  let configService: ConfigService;
+  let sendbirdService: SendbirdService;
+  let emailService: EmailService;
+  let logger: Logger;
 
   beforeEach(async () => {
-    mockSendbird = {
-      getMessage: jest.fn(),
-      sendMessage: jest.fn(),
-      getGroupChannelMembers: jest.fn().mockResolvedValue([]),
-    };
-
-    mockWebhookHandler = {
-      handleWebhook: jest.fn(),
-      getEventsByType: jest.fn(),
-      getFailedEvents: jest.fn(),
-    };
-
-    mockConfigService = {
-      get: jest.fn().mockReturnValue('test-secret'),
-    };
-
-    mockEmailService = {
-      sendMessageNotification: jest.fn(),
-    };
-
-    // Mock signature verification to return true by default
-    (signatureUtil.verifySignature as jest.Mock).mockResolvedValue(true);
-
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         WebhooksService,
         {
           provide: ConfigService,
-          useValue: mockConfigService,
+          useValue: {
+            get: jest.fn().mockReturnValue('secret'), 
+            set: jest.fn(),
+          },
         },
         {
           provide: SendbirdService,
-          useValue: mockSendbird,
-        },
-        {
-          provide: WebhookHandlerService,
-          useValue: mockWebhookHandler,
+          useValue: {
+            getGroupChannelMembers: jest.fn(),
+            getUserById: jest.fn().mockResolvedValue({ metadata: { email: 'test@gmail.com'},userId:"test_user_id" }),
+            getUserSessions: jest.fn().mockResolvedValue({token:"session_token"}),
+            getCurrentUser: jest.fn().mockResolvedValue({metadata:{email:"test@gmail.com", userId:"test_user_id", role:"test_role"}}),
+            reconnect: jest.fn().mockResolvedValue(true),
+          },
         },
         {
           provide: EmailService,
-          useValue: mockEmailService,
+          useValue: {
+            sendEmail: jest.fn().mockResolvedValue({threadId:"thread_id"}),
+          },
+        },
+        {
+          provide: Logger,
+          useValue: {
+            log: jest.fn(),
+            error: jest.fn(),
+            warn: jest.fn(),
+          },
         },
       ],
     }).compile();
 
-    service = module.get<WebhooksService>(WebhooksService);
-  });
+    webhooksService = module.get<WebhooksService>(WebhooksService);
+    configService = module.get<ConfigService>(ConfigService);
+    sendbirdService = module.get<SendbirdService>(SendbirdService);
+    emailService = module.get<EmailService>(EmailService);
+    logger = module.get<Logger>(Logger);
 
-  afterEach(() => {
     jest.clearAllMocks();
   });
 
   it('should be defined', () => {
-    expect(service).toBeDefined();
+    expect(webhooksService).toBeDefined();
+  });
+
+  describe('verifyWebhookSignature', () => {
+    it('should return false if webhook secret is not configured', async () => {
+      (configService.get as jest.Mock).mockReturnValue(false);
+      const result = await webhooksService.verifyWebhookSignature(
+        'signature',
+        'secret',
+      );
+      expect(result).toBe(false);
+      expect(logger.error).toHaveBeenCalledWith(
+        'Webhook secret not configured',
+      );
+    });
+
+    it('should return the result of verifySignature', async () => {
+      (configService.get as jest.Mock).mockReturnValue('secret');
+      (verifySignature as jest.Mock).mockReturnValue(true);
+      const result = await webhooksService.verifyWebhookSignature(
+        'signature',
+        'secret',
+      );
+      expect(result).toBe(true);
+      expect(verifySignature).toHaveBeenCalledWith('signature', 'secret');
+    });
   });
 
   describe('handleWebhookEvent', () => {
-    const mockPayload = {
-      category: 'message',
-      type: 'MESG',
-      sender: {
-        userId: 'user_123',
-        nickname: 'Test User'
-      },
-      channelUrl: 'channel_123',
-      message: 'Hello',
-      messageId: 'msg_123'
-    };
-
-    const mockSignature = 'test-signature';
-
-    it('should handle message events', async () => {
-      await service.handleWebhookEvent(mockPayload, mockSignature);
-
-      expect(mockSendbird.getGroupChannelMembers).toHaveBeenCalledWith(mockPayload.channelUrl);
-    });
-
-    it('should handle file events', async () => {
-      const filePayload = {
-        category: 'file',
-        type: 'FILE',
-        sender: {
-          userId: 'user_123',
-          nickname: 'Test User'
-        },
-        channelUrl: 'channel_123',
-        url: 'https://example.com/file.pdf',
-        name: 'test.pdf',
-        messageId: 'msg_123'
+    it('should handle group_channel:message_send event', async () => {
+      const payload = {
+        category: 'group_channel:message_send',
+        channel: { channel_url: 'test_url' },
+        payload: { message: 'test' },
+        sender: { user_id: 'sender_id', nickname: 'sender_nick' },
+        type: 'MESG',
+        url: null,
       };
+      (configService.get as jest.Mock).mockReturnValue('secret');
+      (verifySignature as jest.Mock).mockReturnValue(true);
+      (sendbirdService.getGroupChannelMembers as jest.Mock).mockResolvedValue([
+        { userId: 'recipient_id' },
+      ]);
+      (sendbirdService.getUserById as jest.Mock).mockResolvedValue({
+        metadata: { email: 'test@example.com' },
+      });
+      (sendbirdService.getUserSessions as jest.Mock).mockResolvedValue(
+        'session_token',
+      );
+      (emailService.sendEmail as jest.Mock).mockResolvedValue({
+        threadId: 'thread_id',
+      });
 
-      await service.handleWebhookEvent(filePayload, mockSignature);
-
-      expect(mockSendbird.getGroupChannelMembers).toHaveBeenCalledWith(filePayload.channelUrl);
+      const result = await webhooksService.handleWebhookEvent(
+        payload,
+        'signature',
+      );
+      expect(result).toEqual({ success: true });
+      expect(emailService.sendEmail).toHaveBeenCalled();
     });
 
-    it('should reject invalid signatures', async () => {
-      (signatureUtil.verifySignature as jest.Mock).mockResolvedValue(false);
+    it('should handle group_channel:file event', async () => {
+      const payload = {
+        category: 'group_channel:file',
+        channel: { channel_url: 'test_url' },
+        payload: { url: 'file_url' },
+        sender: { user_id: 'sender_id', nickname: 'sender_nick' },
+        type: 'FILE',
+        url: 'file_url',
+      };
+      (configService.get as jest.Mock).mockReturnValue('secret');
+      (verifySignature as jest.Mock).mockReturnValue(true);
+      (sendbirdService.getGroupChannelMembers as jest.Mock).mockResolvedValue([
+        { userId: 'recipient_id' },
+      ]);
+      (sendbirdService.getUserById as jest.Mock).mockResolvedValue({
+        metadata: { email: 'test@example.com' },
+      });
+      (sendbirdService.getUserSessions as jest.Mock).mockResolvedValue(
+        'session_token',
+      );
+      (emailService.sendEmail as jest.Mock).mockResolvedValue({
+        threadId: 'thread_id',
+      });
+      (axios.get as jest.Mock).mockResolvedValue({
+        data: Buffer.from('test_image_data'),
+      });
+
+      const result = await webhooksService.handleWebhookEvent(
+        payload,
+        'signature',
+      );
+      expect(result).toEqual({ success: true });
+      expect(emailService.sendEmail).toHaveBeenCalled();
+    });
+
+    it('should handle unhandled event category', async () => {
+      const payload = { category: 'unknown_category' };
+      (configService.get as jest.Mock).mockReturnValue('secret');
+      (verifySignature as jest.Mock).mockReturnValue(true);
+
+      const result = await webhooksService.handleWebhookEvent(
+        payload,
+        'signature',
+      );
+      expect(result).toEqual({
+        success: false,
+        message: 'Unhandled event category',
+      });
+    });
+
+    it('should throw error on invalid signature', async () => {
+      const payload = { category: 'group_channel:message_send' };
+      (configService.get as jest.Mock).mockReturnValue('secret');
+      (verifySignature as jest.Mock).mockReturnValue(false);
 
       await expect(
-        service.handleWebhookEvent(mockPayload, 'invalid-signature')
+        webhooksService.handleWebhookEvent(payload, 'signature'),
       ).rejects.toThrow('Invalid webhook signature');
     });
 
-    it('should handle missing webhook secret', async () => {
-      mockConfigService.get.mockReturnValue(null);
+    it('should throw error on missing webhook secret', async () => {
+      const payload = { category: 'group_channel:message_send' };
+      (configService.get as jest.Mock).mockReturnValue(null);
 
       await expect(
-        service.handleWebhookEvent(mockPayload, mockSignature)
-      ).rejects.toThrow('Invalid webhook signature');
+        webhooksService.handleWebhookEvent(payload, 'signature'),
+      ).rejects.toThrow('Webhook secret not configured');
+    });
+
+    it('should handle sendbird reconnect on sendbird error', async () => {
+      const payload = {
+        category: 'group_channel:message_send',
+        channel: { channel_url: 'test_url' },
+        payload: { message: 'test' },
+        sender: { user_id: 'sender_id', nickname: 'sender_nick' },
+        type: 'MESG',
+        url: null,
+      };
+      (configService.get as jest.Mock).mockReturnValue('secret');
+      (verifySignature as jest.Mock).mockReturnValue(true);
+      (sendbirdService.getGroupChannelMembers as jest.Mock).mockRejectedValue({
+        code: 400300,
+      });
+
+      await webhooksService.handleWebhookEvent(payload, 'signature');
+      expect(sendbirdService.reconnect).toHaveBeenCalled();
     });
   });
 });

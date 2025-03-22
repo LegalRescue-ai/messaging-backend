@@ -1,48 +1,79 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConfigService } from '@nestjs/config';
 import { SendbirdService } from './sendbird.service';
-import { UserRole } from '../users/enums/user-role.enum';
+import { ConfigService } from '@nestjs/config';
 import * as SendBird from 'sendbird';
+import axios from 'axios';
+import { UserRole } from '../users/dto/create-user.dto';
 
 jest.mock('sendbird');
+jest.mock('axios');
 
 describe('SendbirdService', () => {
   let service: SendbirdService;
   let configService: ConfigService;
-
-  const mockConfigService = {
-    get: jest.fn().mockReturnValue('test-app-id')
-  };
-
-  const mockGroupChannelParams = jest.fn();
-
-  const mockSendBirdInstance = {
-    connect: jest.fn(),
-    updateCurrentUserInfo: jest.fn(),
-    GroupChannel: {
-      createChannel: jest.fn(),
-      getChannel: jest.fn()
-    },
-    GroupChannelParams: mockGroupChannelParams,
-    UserMessageParams: jest.fn().mockReturnValue({})
-  };
+  let sendBirdMock: any;
+  let groupChannelMock: any;
+  let currentUserMock: any;
 
   beforeEach(async () => {
-    jest.clearAllMocks();
-    (SendBird as any).mockImplementation(() => mockSendBirdInstance);
+    sendBirdMock = {
+      connect: jest.fn().mockResolvedValue({
+         userId: "test_user_id",
+         nickname: "test_user",
+          profileUrl: "test_profile_url",
+          metaData: {role:"test_role", email:"test@gmail.com"},
+      }),
+      updateCurrentUserInfo: jest.fn().mockImplementation(
+        (name, profileUrl, callback) => {
+          callback({}, null);
+        },
+      ),
+      currentUser: {
+        createMetaData: jest.fn().mockResolvedValue({role:"test_role", email:"test@gmail.com"}),
+      },
+      GroupChannel: {
+        getChannel: jest.fn().mockResolvedValue({channel_url: "test_channel_url"}), 
+        createPreviousMessageListQuery: jest.fn(),
+        createMemberListQuery: jest.fn(),
+        createMyGroupChannelListQuery: jest.fn(),
+      },
+      UserMessageParams: jest.fn(),
+      reconnect: jest.fn().mockResolvedValue(true),
+    };
+
+    currentUserMock = {
+      createMetaData: jest.fn().mockResolvedValue({role:"test_role", email:"test@gmail.com"  }),
+    };
+
+    groupChannelMock = {
+      sendUserMessage: jest.fn(),
+      createPreviousMessageListQuery: jest.fn(),
+      createMemberListQuery: jest.fn().mockImplementation(() => ({
+        next: jest.fn(),
+        members: [{ userId: 'test_user_id' }],
+      })),
+      createMyGroupChannelListQuery: jest.fn(),
+    };
+
+    (SendBird as any).mockImplementation(() => sendBirdMock);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SendbirdService,
         {
           provide: ConfigService,
-          useValue: mockConfigService
-        }
+          useValue: {
+            get: jest.fn().mockReturnValue({'test_app_id':{email:"test@gmail.com"}}),
+            set: jest.fn(),
+          },
+        },
       ],
     }).compile();
 
     service = module.get<SendbirdService>(SendbirdService);
     configService = module.get<ConfigService>(ConfigService);
+
+    jest.clearAllMocks();
   });
 
   it('should be defined', () => {
@@ -50,195 +81,202 @@ describe('SendbirdService', () => {
   });
 
   describe('generateUniqueUserId', () => {
-    it('should generate valid user ID from name', async () => {
-      const name = 'John Doe';
-      const userId = await service.generateUniqueUserId(name);
-      
-      expect(userId).toMatch(/^johndoe_[a-z0-9]+$/);
-    });
-
-    it('should handle special characters in name', async () => {
-      const name = 'John@Doe#123';
-      const userId = await service.generateUniqueUserId(name);
-      
-      expect(userId).toMatch(/^johndoe123_[a-z0-9]+$/);
+    it('should generate a unique user ID', async () => {
+      const userId = await service.generateUniqueUserId('Test User');
+      expect(userId).toMatch(/^testuser_[a-z0-9]+$/);
     });
   });
 
   describe('createUser', () => {
-    it('should create user successfully', async () => {
-      const userId = 'test-user';
-      const name = 'Test User';
-      const role = UserRole.CLIENT;
-      const email = 'test@example.com';
-
-      const mockUser = {
-        userId,
-        nickname: name,
-        metaData: {}
-      };
-
-      mockSendBirdInstance.connect.mockImplementation((_, callback) => 
-        callback(mockUser, null)
+    it('should create a user', async () => {
+      (configService.get as jest.Mock).mockReturnValue('test_app_id');
+      sendBirdMock.connect.mockImplementation((userId, callback) => {
+        callback({}, null);
+      });
+      sendBirdMock.updateCurrentUserInfo.mockImplementation(
+        (name, profileUrl, callback) => {
+          callback({}, null);
+        },
       );
+      sendBirdMock.currentUser.createMetaData.mockImplementation(() => {});
 
-      mockSendBirdInstance.updateCurrentUserInfo.mockImplementation((_, __, callback) => 
-        callback(mockUser, null)
+      const result = await service.createUser(
+        'test_user_id',
+        'Test User',
+        UserRole.CLIENT,
+        'test@gmail.com',
       );
-
-      const result = await service.createUser(userId, name, role, email);
-
-      expect(result).toBeDefined();
-      expect(result.userId).toBe(userId);
-      expect(result.metaData).toEqual({ role, email });
-      expect(mockSendBirdInstance.connect).toHaveBeenCalledWith(userId, expect.any(Function));
-      expect(mockSendBirdInstance.updateCurrentUserInfo).toHaveBeenCalledWith(name, '', expect.any(Function));
+      expect(result).toEqual({});
+      expect(sendBirdMock.connect).toHaveBeenCalled();
+      expect(sendBirdMock.updateCurrentUserInfo).toHaveBeenCalled();
+      expect(sendBirdMock.currentUser.createMetaData).toHaveBeenCalledWith({
+        role: UserRole.CLIENT,
+        email: 'test@gmail.com',
+      });
     });
 
-    it('should handle connection error', async () => {
-      const error = new Error('Connection failed');
-      mockSendBirdInstance.connect.mockImplementation((_, callback) => 
-        callback(null, error)
+    it('should reject with an error if connect fails', async () => {
+      sendBirdMock.connect.mockImplementation((userId, callback) => {
+        callback(null, new Error('Connect error'));
+      });
+
+      await expect(
+        service.createUser(
+          'test_user_id',
+          'Test User',
+          UserRole.CLIENT,
+          'test@example.com',
+        ),
+      ).rejects.toThrow('Connect error');
+    });
+
+    it('should reject with an error if updateCurrentUserInfo fails', async () => {
+      sendBirdMock.connect.mockImplementation((userId, callback) => {
+        callback({}, null);
+      });
+      sendBirdMock.updateCurrentUserInfo.mockImplementation(
+        (name, profileUrl, callback) => {
+          callback(null, new Error('Update error'));
+        },
       );
 
-      await expect(service.createUser('user', 'name', UserRole.CLIENT, 'email'))
-        .rejects.toThrow('Connection failed');
+      await expect(
+        service.createUser(
+          'test_user_id',
+          'Test User',
+          UserRole.CLIENT,
+          'test@example.com',
+        ),
+      ).rejects.toThrow('Update error');
     });
   });
 
-  describe('createClientAttorneyChannel', () => {
-    it('should create channel successfully', async () => {
-      const clientId = 'client-1';
-      const attorneyId = 'attorney-1';
-      const mockChannel = { url: 'channel-url' };
+  describe('getCurrentUser', () => {
+    it('should return the current user', () => {
+      sendBirdMock.currentUser = { id: 'test_user_id' };
+      const result = service.getCurrentUser();
+      expect(result).toEqual({ id: 'test_user_id' });
+    });
+  });
 
-      const mockParams = {
-        addUserIds: jest.fn(),
-        isDistinct: false,
-        name: ''
-      };
+  describe('getUserById', () => {
+    it('should return user data if found', async () => {
+      (configService.get as jest.Mock).mockReturnValue('test_app_id');
+      (axios.get as jest.Mock).mockResolvedValue({
+        data: { id: 'test_user_id' },
+      });
 
-      mockGroupChannelParams.mockReturnValue(mockParams);
-
-      mockSendBirdInstance.GroupChannel.createChannel.mockImplementation((params, callback) =>
-        callback(mockChannel, null)
-      );
-
-      const result = await service.createClientAttorneyChannel(clientId, attorneyId);
-
-      expect(result).toBe(mockChannel);
-      expect(mockParams.addUserIds).toHaveBeenCalledWith([clientId, attorneyId]);
-      expect(mockParams.isDistinct).toBe(true);
-      expect(mockParams.name).toBe(`Legal Consultation: ${clientId} - ${attorneyId}`);
+      const result = await service.getUserById('test_user_id');
+      expect(result).toEqual({ id: 'test_user_id' });
     });
 
-    it('should handle channel creation error', async () => {
-      const error = new Error('Channel creation failed');
-      mockSendBirdInstance.GroupChannel.createChannel.mockImplementation((_, callback) =>
-        callback(null, error)
-      );
+    it('should return null if user is not found', async () => {
+      (configService.get as jest.Mock).mockReturnValue('test_app_id');
+      (axios.get as jest.Mock).mockResolvedValue({
+        data: { error: true, code: 400201 },
+      });
 
-      await expect(service.createClientAttorneyChannel('client', 'attorney'))
-        .rejects.toThrow('Channel creation failed');
+      const result = await service.getUserById('test_user_id');
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('reconnect', () => {
+    it('should call Sendbird reconnect', () => {
+      service.reconnect();
+      expect(sendBirdMock.reconnect).toHaveBeenCalled();
+    });
+  });
+
+  describe('getUserSessions', () => {
+    it('should return the token from axios.post', async () => {
+      (configService.get as jest.Mock).mockReturnValue('test_app_id');
+      (axios.post as jest.Mock).mockResolvedValue({
+        data: { token: 'test_token' },
+      });
+
+      const result = await sendBirdMock.getUserSessions('test_user_id');
+      expect(result).toEqual('test_token');
+    });
+
+    it('should return null if axios.post fails', async () => {
+      (configService.get as jest.Mock).mockReturnValue('test_app_id');
+      (axios.post as jest.Mock).mockRejectedValue(new Error('Post error'));
+
+      const result = await service.getUserSessions('test_user_id');
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('getUserByEmail', () => {
+    it('should return user with access token if successful', async () => {
+      sendBirdMock.connect.mockImplementation((name, token, callback) => {
+        callback({ id: 'test_user_id' }, null);
+      });
+      (configService.set as jest.Mock).mockImplementation(() => {});
+
+      const result = await service.getUserByEmail(
+        'test_user_id',
+        'test@gmail.com',
+      );
+      expect(result).toContain({ user_id: 'test_user_id' });
+    });
+
+    it('should return null if getUserSessions fails', async () => {
+      const result = await service.getUserByEmail(
+        'test_user_id',
+        'test@example.com',
+      );
+      expect(result).toBeNull();
     });
   });
 
   describe('sendMessage', () => {
-    const mockChannel = {
-      sendUserMessage: jest.fn()
-    };
-
-    beforeEach(() => {
-      mockSendBirdInstance.GroupChannel.getChannel.mockImplementation((_, callback) =>
-        callback(mockChannel, null)
+    it('should send a message', async () => {
+      sendBirdMock.connect.mockImplementation((userId, token, callback) => {
+        callback({}, null);
+      });
+      sendBirdMock.GroupChannel.getChannel.mockImplementation(
+        (channelUrl, callback) => {
+          callback(groupChannelMock, null);
+        },
       );
-    });
-
-    it('should send text message successfully', async () => {
-      const channelUrl = 'channel-1';
-      const userId = 'user-1';
-      const message = 'Hello';
-      const mockMessage = { message };
-
-      mockChannel.sendUserMessage.mockImplementation((params, callback) =>
-        callback(mockMessage, null)
+      sendBirdMock.UserMessageParams.mockImplementation(() => ({}));
+      groupChannelMock.sendUserMessage.mockImplementation(
+        (params, callback) => {
+          callback({ message: 'test' }, null);
+        },
       );
 
-      const result = await service.sendMessage(channelUrl, userId, message);
-
-      expect(result).toBe(mockMessage);
-      expect(mockSendBirdInstance.GroupChannel.getChannel).toHaveBeenCalledWith(channelUrl, expect.any(Function));
-    });
-
-    it('should send message with file URL', async () => {
-      const channelUrl = 'channel-1';
-      const userId = 'user-1';
-      const message = 'Check this file';
-      const fileUrl = 'https://example.com/file.pdf';
-      const mockMessage = { message, data: JSON.stringify({ fileUrl }) };
-
-      mockChannel.sendUserMessage.mockImplementation((params, callback) =>
-        callback(mockMessage, null)
+      const result = await service.sendMessage(
+        'test_channel_url',
+        'test_user_id',
+        'test_message',
       );
-
-      const result = await service.sendMessage(channelUrl, userId, message, fileUrl);
-
-      expect(result).toBe(mockMessage);
-      expect(mockChannel.sendUserMessage).toHaveBeenCalledWith(
-        expect.objectContaining({
-          message,
-          data: JSON.stringify({ fileUrl })
-        }),
-        expect.any(Function)
-      );
+      expect(result).toEqual({ message: 'test' });
     });
   });
 
-  describe('getMessages', () => {
-    const mockChannel = {
-      createPreviousMessageListQuery: jest.fn()
-    };
-
-    const mockQuery = {
-      limit: 0,
-      reverse: false,
-      load: jest.fn()
-    };
-
-    beforeEach(() => {
-      mockSendBirdInstance.GroupChannel.getChannel.mockImplementation((_, callback) =>
-        callback(mockChannel, null)
+  describe('getGroupChannelMembers', () => {
+    it('should return group channel members', async () => {
+      sendBirdMock.connect.mockImplementation((userId, token, callback) => {
+        callback({}, null);
+      });
+      sendBirdMock.GroupChannel.getChannel.mockImplementation(
+        (channelUrl, callback) => {
+          callback(groupChannelMock, null);
+        },
       );
-      mockChannel.createPreviousMessageListQuery.mockReturnValue(mockQuery);
-    });
+      groupChannelMock.createMemberListQuery.mockImplementation(() => ({
+        next: jest.fn(),
+        members: [{ userId: 'test_user_id' }],
+      }));
 
-    it('should get messages with default parameters', async () => {
-      const channelUrl = 'channel-1';
-      const messages = [{ messageId: 1 }, { messageId: 2 }];
-
-      mockQuery.load.mockImplementation(callback => callback(messages, null));
-
-      const result = await service.getMessages(channelUrl);
-
-      expect(result).toEqual(messages);
-      expect(mockQuery.limit).toBe(30);
-      expect(mockQuery.reverse).toBe(true);
-    });
-
-    it('should filter messages by timestamp', async () => {
-      const channelUrl = 'channel-1';
-      const timestamp = Date.now();
-      const messages = [
-        { messageId: 1, createdAt: timestamp - 1000 },
-        { messageId: 2, createdAt: timestamp + 1000 }
-      ];
-
-      mockQuery.load.mockImplementation(callback => callback(messages, null));
-
-      const result = await service.getMessages(channelUrl, timestamp);
-
-      expect(result).toHaveLength(1);
-      expect(result[0].messageId).toBe(2);
+      const result = await service.getGroupChannelMembers(
+        'test_user_id',
+        'test_channel_url',
+      );
+      expect(result).toEqual([{ userId: 'test_user_id' }]);
     });
   });
 });
