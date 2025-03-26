@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
 import { Server } from 'socket.io';
 import { v4 as uuidv4 } from 'uuid';
+import { EmailService } from './email.service';
 
 interface SendbirdUserMetadata {
   role?: string;
@@ -34,15 +35,11 @@ interface EmailData {
 
 @Injectable()
 export class EmailRepliesService implements OnModuleInit {
-  private readonly logger = new Logger(EmailRepliesService.name);
+  private readonly logger = new Logger(EmailService.name);
   private socketServer: Server;
   private readonly pendingEmails: Map<string, EmailData> = new Map();
   private readonly connectedClients: Set<string> = new Set();
-  private readonly emailConfig: {
-    serviceId: string;
-    templateId: string;
-    publicKey: string;
-  };
+  
 
   constructor(
     private readonly sendbirdService: SendbirdService,
@@ -50,21 +47,6 @@ export class EmailRepliesService implements OnModuleInit {
     private readonly httpService: HttpService,
   ) {    
     // Initialize email configuration
-    this.emailConfig = {
-      serviceId: 'service_cyvc9k9',
-      templateId: 'template_x37o5pi',
-      publicKey: 'sJu2tjaxzTDc1yhjv'
-    };
-
-    // Validate configuration
-    if (!this.emailConfig.serviceId || !this.emailConfig.templateId || !this.emailConfig.publicKey) {
-      throw new Error('Missing required EmailJS configuration');
-    }
-
-    this.logger.log('EmailJS configuration initialized:', {
-      serviceId: this.emailConfig.serviceId,
-      templateId: this.emailConfig.templateId
-    });
   }
 
   setSocketServer(server: Server) {
@@ -160,8 +142,8 @@ export class EmailRepliesService implements OnModuleInit {
   private createEmailPayload(emailData: EmailData) {
     const payload = {
       id: emailData.id || uuidv4(),
-      serviceId: this.emailConfig.serviceId,
-      templateId: this.emailConfig.templateId,
+      serviceId: "this.emailConfig.serviceId",
+      templateId: "this.emailConfig.templateId",
       templateParams: emailData.templateParams,
       from: emailData.from,
       replyBody: emailData.replyBody,

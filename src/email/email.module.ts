@@ -4,7 +4,7 @@ import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { EmailService } from './email.service';
 import { EmailRepliesService } from './email-replies.service';
-import { EmailRepliesController } from './email-replies.controller';
+import { EmailController } from './email.controller';
 import { SendbirdModule } from '../sendbird/sendbird.module';
 import { EmailGateway } from './email.gateway';
 
@@ -19,7 +19,7 @@ import { EmailGateway } from './email.gateway';
     SendbirdModule,
   ],
   providers: [EmailService, EmailRepliesService, EmailGateway],
-  controllers: [EmailRepliesController],
+  controllers: [EmailController],
   exports: [EmailService, EmailRepliesService],
 })
 export class EmailModule {}

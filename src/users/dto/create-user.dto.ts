@@ -6,7 +6,7 @@ export enum UserRole {
   ATTORNEY = 'attorney',
 }
 
-export class CreateUserDto {
+export class UserDto {
   @ApiProperty({
     example: 'John Doe',
     description: 'The full name of the user',

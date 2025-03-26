@@ -58,6 +58,12 @@ npm run build
 npm run start:prod
 ```
 
+## Authanticating a gmail account for the first time
+
+copy and paste the credentials.json file into the root directory of the project.
+navigate to v1/email in your browser with a gmail api enabled account and follow the instructions to authenticate the account.
+token.json will be created in the root directory of the project and you have successfully authenticated the gmail account.
+
 ## API Documentation
 
 All endpoints require JWT authentication unless specified otherwise. Include the JWT token in the Authorization header:

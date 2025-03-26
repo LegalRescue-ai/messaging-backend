@@ -82,7 +82,7 @@ export class WebhookHandlerService {
   private async processWebhookEvent(event: WebhookEvent): Promise<void> {
     try {
       event.processingStatus = WebhookProcessingStatus.PROCESSING;
-      
+      this.logger.log(event);
       switch (event.type) {
         case WebhookEventType.MESSAGE_SENT:
           await this.handleMessageSent(event);

@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { SendbirdService } from '../sendbird/sendbird.service';
-import { EmailRepliesService } from '../email/email-replies.service';
 import * as SendBird from 'sendbird';
+import { EmailService } from 'src/email/email.service';
 
 interface MessageNotificationData {
   messageId: number;
@@ -25,7 +25,7 @@ export class MessageHandlerService {
 
   constructor(
     private readonly sendbirdService: SendbirdService,
-    private readonly emailService: EmailRepliesService,
+    private readonly emailService: EmailService,
   ) {}
 
   async handleNewMessage(message: SendBird.UserMessage, channel: SendBird.GroupChannel) {
@@ -99,7 +99,7 @@ export class MessageHandlerService {
           channelUrl: data.channelUrl
         });
 
-        await this.emailService.queueEmailNotification(emailData);
+        await this.emailService.sendEmail(emailData.templateParams.to_email, 'New message received', emailData.templateParams.message);
       }
     } catch (error) {
       this.logger.error('Error processing message notification:', error);
