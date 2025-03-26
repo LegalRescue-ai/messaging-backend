@@ -1,4 +1,5 @@
-import { IsString, IsEmail, IsEnum } from 'class-validator';
+/* eslint-disable prettier/prettier */
+import { IsString, IsEmail, IsEnum, IsNotEmpty } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export enum UserRole {
@@ -28,4 +29,10 @@ export class UserDto {
   })
   @IsEnum(UserRole)
   role: UserRole;
+@IsString()
+profileUrl?: string;
+
+  @IsString()
+  @IsNotEmpty()
+  id:string
 }
