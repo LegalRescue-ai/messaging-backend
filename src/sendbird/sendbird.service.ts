@@ -251,31 +251,40 @@ export class SendbirdService {
     });
   }
 
-  async getMessages(channelUrl: string, messageTimestamp?: number, prevLimit?: number, nextLimit?: number): Promise<SendBird.UserMessage[]> {
+  async getMessages(channelUrl: string, userId: string, messageTimestamp?: number, prevLimit?: number, nextLimit?: number): Promise<SendBird.UserMessage[]> {
     console.log(nextLimit);
     
     return new Promise((resolve, reject) => {
-      this.sb.GroupChannel.getChannel(channelUrl, (groupChannel, error) => {
+      // First connect to SendBird
+      this.sb.connect(userId, (user, error) => {
         if (error) {
           reject(error);
           return;
         }
-
-        const query = groupChannel.createPreviousMessageListQuery();
-        query.limit = prevLimit || 30;
-        query.reverse = true;
-        query.load((messages, error) => {
+        
+        // After successful connection, get the channel
+        this.sb.GroupChannel.getChannel(channelUrl, (groupChannel, error) => {
           if (error) {
             reject(error);
             return;
           }
-          
-          if (messageTimestamp) {
-            const filteredMessages = messages.filter(m => m.createdAt >= messageTimestamp);
-            resolve(filteredMessages as SendBird.UserMessage[]);
-          } else {
-            resolve(messages as SendBird.UserMessage[]);
-          }
+  
+          const query = groupChannel.createPreviousMessageListQuery();
+          query.limit = prevLimit || 30;
+          query.reverse = true;
+          query.load((messages, error) => {
+            if (error) {
+              reject(error);
+              return;
+            }
+            
+            if (messageTimestamp) {
+              const filteredMessages = messages.filter(m => m.createdAt >= messageTimestamp);
+              resolve(filteredMessages as SendBird.UserMessage[]);
+            } else {
+              resolve(messages as SendBird.UserMessage[]);
+            }
+          });
         });
       });
     });

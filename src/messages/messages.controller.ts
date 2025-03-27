@@ -1,3 +1,4 @@
+/* eslint-disable prettier/prettier */
 import { Controller, Post, Get, Body, Param, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { SendbirdService } from '../sendbird/sendbird.service';
@@ -21,17 +22,19 @@ export class MessagesController {
     );
   }
 
-  @Get(':channelUrl')
+  @Get(':channelUrl/:userId')
   @ApiOperation({ summary: 'Get message history from a channel' })
   @ApiResponse({ status: 200, description: 'Message history retrieved successfully' })
   async getMessages(
     @Param('channelUrl') channelUrl: string,
+    @Param('userId') userId: string,
     @Query('messageTimestamp') messageTimestamp?: number,
     @Query('prevLimit') prevLimit?: number,
     @Query('nextLimit') nextLimit?: number,
   ) {
     return await this.sendbirdService.getMessages(
       channelUrl,
+      userId,
       messageTimestamp,
       prevLimit,
       nextLimit
