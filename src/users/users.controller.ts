@@ -1,3 +1,4 @@
+/* eslint-disable prettier/prettier */
 import { Controller, Post, Get, Body, Param } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { SendbirdService } from '../sendbird/sendbird.service';
@@ -12,14 +13,13 @@ export class UsersController {
   @ApiOperation({ summary: 'Register a new user in Sendbird' })
   @ApiResponse({ status: 201, description: 'User successfully registered' })
   async registerUser(@Body() createUserDto: UserDto) {
-    const sendbirdUserId = await this.sendbirdService.generateUniqueUserId(
-      createUserDto.name,
-    );
+    const sendbirdUserId = createUserDto.id;
     const user = await this.sendbirdService.createUser(
       sendbirdUserId,
       createUserDto.name,
       createUserDto.role,
       createUserDto.email,
+      createUserDto.profileUrl,
     );
 
     return {
@@ -30,36 +30,60 @@ export class UsersController {
     };
   }
 
-  @Post('login')
-  @ApiOperation({ summary: 'Login a user in Sendbird' })
-  @ApiResponse({ status: 201, description: 'User successfully logged in' })
-  async loginUser(@Body() loginUserDto: UserDto) {
-    const emailExists = await this.sendbirdService.getUserByEmail(
-     loginUserDto.name, loginUserDto.email); 
-    if ( emailExists ) {
-      return {
-        sendbirdUserId: emailExists.userId,
-        nickname: emailExists.nickname,
-        role: loginUserDto.role,
-        profileUrl: emailExists.profileUrl,
-        accessToken: emailExists.accessToken,
-      };
-    }
-    else{
-      const user = await this.sendbirdService.createUser(
-        loginUserDto.name,
-        loginUserDto.name,
-        loginUserDto.role,
-        loginUserDto.email,
+ @Post('login')
+@ApiOperation({ summary: 'Login a user in Sendbird' })
+@ApiResponse({ status: 201, description: 'User successfully logged in' })
+async loginUser(@Body() loginUserDto: UserDto) {
+  console.log("user in controller", loginUserDto);
+  
+  const user = await this.sendbirdService.getUserInfoById(loginUserDto.id);
+  
+  if (user) {
+    if ((!user.profileUrl || user.profileUrl === '') && loginUserDto.profileUrl) {
+      console.log("Updating user profile URL:", loginUserDto.profileUrl);
+      const updatedUser = await this.sendbirdService.updateUser(
+        loginUserDto.id,
+        {
+          profileUrl: loginUserDto.profileUrl
+        }
       );
+      
+      // Return updated user info
       return {
-        sendbirdUserId: user.userId,
-        nickname: user.nickname,
+        sendbirdUserId: updatedUser.userId,
+        nickname: updatedUser.nickname,
         role: loginUserDto.role,
-        profileUrl: user.profileUrl,
+        profileUrl: updatedUser.profileUrl,
+        
       };
     }
+    
+    // Return existing user info if no update needed
+    return {
+      sendbirdUserId: user.userId,
+      nickname: user.nickname,
+      role: loginUserDto.role,
+      profileUrl: user.profileUrl,
+      accessToken: user.accessToken,
+    };
+  } else {
+    // Create new user if doesn't exist
+    const newUser = await this.sendbirdService.createUser(
+      loginUserDto.id,
+      loginUserDto.name,
+      loginUserDto.role,
+      loginUserDto.email,
+      loginUserDto.profileUrl,
+    );
+    
+    return {
+      sendbirdUserId: newUser.userId,
+      nickname: newUser.nickname,
+      role: loginUserDto.role,
+      profileUrl: newUser.profileUrl,
+    };
   }
+}
 
   @Get(':sendbirdUserId')
   @ApiOperation({ summary: 'Get user details from Sendbird' })

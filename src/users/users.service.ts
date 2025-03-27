@@ -1,23 +1,26 @@
+/* eslint-disable prettier/prettier */
 import { Injectable } from '@nestjs/common';
 import { SendbirdService } from '../sendbird/sendbird.service';
-import { UserDto, UserRole } from './dto/create-user.dto';
+import { UserDto } from './dto/create-user.dto';
 
 @Injectable()
 export class UsersService {
   constructor(private readonly sendbirdService: SendbirdService) {}
 
   async createUser(createUserDto: UserDto) {
-    const { name, email, role } = createUserDto;
+    const { name, email, role, profileUrl, id } = createUserDto;
+    console.log("user in user service", createUserDto)
 
-    // Generate a unique userId based on the name
-    const userId = await this.sendbirdService.generateUniqueUserId(name);
+    
+    const userId = id;
 
     // Create user in Sendbird
     const user = await this.sendbirdService.createUser(
       userId,
       name,
-      role as UserRole,
+      role,
       email,
+      profileUrl
     );
 
     return {

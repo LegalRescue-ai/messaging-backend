@@ -1,3 +1,4 @@
+/* eslint-disable prettier/prettier */
 import * as SendBird from 'sendbird';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -18,33 +19,65 @@ export class SendbirdService {
     this.sb = new SendBird({ appId: this.configService.get<string>('sendbird.appId')!,  });
   }
 
-  async generateUniqueUserId(name: string): Promise<string> {
-    const base = name.toLowerCase().replace(/[^a-z0-9]/g, '');
-    const timestamp = Date.now().toString(36);
-    return `${base}_${timestamp}`;
-  }
 
-  async createUser(userId: string, name: string, role: UserRole, email: string) {
+  async createUser(userId: string, name: string, role: UserRole, email: string, profileUrl?: string) {
+    console.log("user in send bird", {userId, name, role, email, profileUrl})
     return new Promise<SendBird.User>((resolve, reject) => {
       this.sb.connect(userId, (user, error) => {
         if (error) {
           reject(error);
           return;
         }
-
-        this.sb.updateCurrentUserInfo(name, '', (user, error) => {
-          if (error) {
-            reject(error);
+  
+        // Update user info with name and profile picture
+        this.sb.updateCurrentUserInfo(name, profileUrl || '', (updatedUser, updateError) => {
+          if (updateError) {
+            reject(updateError);
             return;
           }
-
-          // Store metadata with proper typing
-         this.sb.currentUser.createMetaData({ role, email });  
-          resolve(user);
+  
+          // Store additional metadata
+          this.sb.currentUser.createMetaData({ 
+            role, 
+            email,
+            profileUrl 
+          }, (metaDataResponse, metaDataError) => {
+            if (metaDataError) {
+              reject(metaDataError);
+              return;
+            }
+  
+            resolve(updatedUser);
+          });
         });
       });
     });
   }
+  async updateUser(userId: string, updateData: { profileUrl?: string, nickname?: string }): Promise<SendBird.User> {
+    return new Promise<SendBird.User>((resolve, reject) => {
+        this.sb.connect(userId, (user, error) => {
+            if (error) {
+                reject(error);
+                return;
+            }
+    
+            // Update user info with name and profile picture
+            this.sb.updateCurrentUserInfo(
+                updateData.nickname || '', 
+                updateData.profileUrl || '', 
+                (updatedUser, updateError) => {
+                    if (updateError) {
+                        reject(updateError);
+                        return;
+                    }
+                    
+                    resolve(updatedUser);
+                }
+            );
+        });
+    });
+}
+  
 
   getCurrentUser(){
     return this.sb.currentUser;
@@ -64,6 +97,25 @@ export class SendbirdService {
 
   async reconnect(){
     this.sb.reconnect();
+  }
+
+  async getUserInfoById(userId: string): Promise<any> {
+    try {
+      const response = await axios.get(`https://api-${this.configService.get<string>('sendbird.appId')!}.sendbird.com/v3/users/${userId}`, {
+        headers: {
+          'Api-Token': this.configService.get<string>('sendbird.apiToken')!,
+        },
+      });
+      return response.data;
+    } catch (error) {
+      if (error.response && 
+          error.response.status === 400 && 
+          error.response.data.code === 400201) {
+        return null; 
+      }
+   
+      throw error;
+    }
   }
 
   async getUserSessions(userId: string): Promise<any> { 
@@ -119,8 +171,7 @@ export class SendbirdService {
       const params = new this.sb.GroupChannelParams();
       params.addUserIds([clientId, attorneyId]);
       params.isDistinct = true;
-      params.name = `Legal Consultation: ${clientId} - ${attorneyId}`;
-      
+   
       this.sb.GroupChannel.createChannel(params, (groupChannel, error) => {
         if (error) {
           reject(error);
@@ -201,6 +252,8 @@ export class SendbirdService {
   }
 
   async getMessages(channelUrl: string, messageTimestamp?: number, prevLimit?: number, nextLimit?: number): Promise<SendBird.UserMessage[]> {
+    console.log(nextLimit);
+    
     return new Promise((resolve, reject) => {
       this.sb.GroupChannel.getChannel(channelUrl, (groupChannel, error) => {
         if (error) {
@@ -356,7 +409,8 @@ export class SendbirdService {
               channelUrl: channel.url,
             };
           }
-        } catch (error) {
+        } catch (error:any) {
+          console.log(error)
           continue;
         }
       }
