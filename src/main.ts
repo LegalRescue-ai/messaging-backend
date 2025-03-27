@@ -16,7 +16,7 @@ async function bootstrap() {
   
   // Enable CORS with WebSocket support
   const allowedOrigins = [
-    'http://localhost:5173',
+    'http://localhost:3000',
     'http://localhost:3002',
     'https://legal-chat-frontend.onrender.com',
     process.env.FRONTEND_URL,

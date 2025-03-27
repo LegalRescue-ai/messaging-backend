@@ -30,6 +30,8 @@ export class UsersController {
     };
   }
 
+ 
+
  @Post('login')
 @ApiOperation({ summary: 'Login a user in Sendbird' })
 @ApiResponse({ status: 201, description: 'User successfully logged in' })
