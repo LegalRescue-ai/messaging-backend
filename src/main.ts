@@ -18,6 +18,7 @@ async function bootstrap() {
   const allowedOrigins = [
     'http://localhost:3000',
     'http://localhost:3002',
+    'https://main.dpfd8ph4b67cm.amplifyapp.com',
     'https://legal-chat-frontend.onrender.com',
     process.env.FRONTEND_URL,
   ].filter(Boolean) as string[];
