@@ -41,7 +41,7 @@ async loginUser(@Body() loginUserDto: UserDto) {
   const user = await this.sendbirdService.getUserInfoById(loginUserDto.id);
   
   if (user) {
-    if ((!user.profileUrl || user.profileUrl === '') && loginUserDto.profileUrl) {
+    if ((!user.profileUrl || user.profileUrl === '' || user.profileUrl !== loginUserDto.profileUrl) && loginUserDto.profileUrl) {
       console.log("Updating user profile URL:", loginUserDto.profileUrl);
       const updatedUser = await this.sendbirdService.updateUser(
         loginUserDto.id,
