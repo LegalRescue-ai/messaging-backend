@@ -89,7 +89,8 @@ export class SendbirdService {
         'Api-Token': this.configService.get<string>('sendbird.apiToken')!,
       },
     });
-    if(user.data.error === true && user.data.code === 400201){
+    if(user.data.error === true && (user.data.code === 400201 || user.data.code === 400302)){
+      this.logger.error(`Error getting user by id: ${userId} ${this.configService.get<string>('sendbird.apiToken')}`);
       return null;
     } 
     return user.data;
