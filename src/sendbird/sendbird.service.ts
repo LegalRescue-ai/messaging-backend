@@ -168,8 +168,13 @@ export class SendbirdService {
   }
 
   async createClientAttorneyChannel(clientId: string, attorneyId: string) {
+    let sessionToken = this.configService.get(clientId)?.accessToken;
+    if (!sessionToken) {
+      sessionToken = await this.getUserSessions(clientId);
+    }
+    
     return new Promise<SendBird.GroupChannel>((resolve, reject) => {
-      this.sb.connect(clientId, (user, error) => {
+      this.sb.connect(clientId, sessionToken, (user, error) => {
          if (error) {
            reject(error);
            return;
