@@ -54,8 +54,13 @@ export class SendbirdService {
     });
   }
   async updateUser(userId: string, updateData: { profileUrl?: string, nickname?: string }): Promise<SendBird.User> {
+    let sessionToken = this.configService.get(userId)?.accessToken;
+    if (!sessionToken) {
+      sessionToken = await this.getUserSessions(userId);
+    }
+    
     return new Promise<SendBird.User>((resolve, reject) => {
-        this.sb.connect(userId, (user, error) => {
+        this.sb.connect(userId, sessionToken, (user, error) => {
             if (error) {
                 reject(error);
                 return;
