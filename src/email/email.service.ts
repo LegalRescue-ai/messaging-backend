@@ -236,7 +236,7 @@ async sendEmail(
 
 
 
-  @Cron(CronExpression.EVERY_MINUTE)
+  @Cron('0 */3 * * * *')
   async checkEmails(): Promise<void> {
     this.logger.log('Checking emails...');
     await this.authorizeGmailApi();
