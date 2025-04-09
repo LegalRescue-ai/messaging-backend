@@ -40,12 +40,13 @@ export class SendbirdService {
           this.sb.currentUser.createMetaData({ 
             role, 
             email,
-            profileUrl 
           }, (metaDataResponse, metaDataError) => {
             if (metaDataError) {
+              console.log("Meta data error", metaDataError)
               reject(metaDataError);
               return;
             }
+            console.log("Meta data response", metaDataResponse)
   
             resolve(updatedUser);
           });
@@ -264,10 +265,15 @@ export class SendbirdService {
 
   async getMessages(channelUrl: string, userId: string, messageTimestamp?: number, prevLimit?: number, nextLimit?: number): Promise<SendBird.UserMessage[]> {
     console.log(nextLimit);
+    let sessionToken = this.configService.get(userId)?.accessToken;
+    if (!sessionToken) {
+      sessionToken = await this.getUserSessions(userId);
+    }
+    
     
     return new Promise((resolve, reject) => {
       // First connect to SendBird
-      this.sb.connect(userId, (user, error) => {
+      this.sb.connect(userId, sessionToken, (user, error) => {
         if (error) {
           reject(error);
           return;
