@@ -17,7 +17,7 @@ export class MessagesController {
       messageDto.channelUrl,
       messageDto.userId,
       messageDto.message,
-      messageDto.fileUrl
+      // messageDto.fileUrl
     );
   }
 

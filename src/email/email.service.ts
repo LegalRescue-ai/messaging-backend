@@ -73,7 +73,8 @@ export class EmailService {
                         const {channel, recipient} = sendbirdMetadata; 
                         if(sendbirdMetadata && channel && recipient) {
                             // 2. Send the email reply to Sendbird
-                          await this.sendbirdService.sendMessage(channel.channel_url, recipient.user_id, (await this.getMessage(email.id)).body)
+                          const newEmail = await this.getMessage(email.id);
+                          await this.sendbirdService.sendMessage(channel.channel_url, recipient.user_id, newEmail.body, newEmail.attachments);
                           this.configService.set(email.threadId, null);
                         }
 
@@ -232,8 +233,6 @@ async sendEmail(
   }
 
   // Utility function for NestJS (non-browser environment)
-
-
 
 
   @Cron(CronExpression.EVERY_MINUTE)
