@@ -1,10 +1,14 @@
+/* eslint-disable @typescript-eslint/no-unsafe-call */
+/* eslint-disable @typescript-eslint/await-thenable */
+/* eslint-disable prettier/prettier */
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { verifySignature } from './utils/signature.util';
 import { SendbirdService } from '../sendbird/sendbird.service';
 import { EmailService } from '../email/email.service';
 import axios from 'axios';
-import { send } from '@emailjs/nodejs';
+import { SupabaseService } from 'supabase/supabase.service';
+
 
 @Injectable()
 export class WebhooksService {
@@ -14,6 +18,7 @@ export class WebhooksService {
     private configService: ConfigService,
     private readonly sendbirdService: SendbirdService,
     private readonly emailService: EmailService,
+    private readonly supabaseService: SupabaseService
   ) {}
 
   async verifyWebhookSignature(signature: string, webhookSecret: string): Promise<boolean> {
@@ -78,7 +83,7 @@ export class WebhooksService {
         // Get recipient's email from metadata
         const recipientUser = await this.sendbirdService.getUserById(recipient.userId);
         const recipientSession = await this.sendbirdService.getUserSessions(recipientUser.user_id);
-        const recipientEmail = recipientUser?.metadata['email'];
+        const recipientEmail =  await this.getUserEmailFromDatabase(recipient.userId, recipientUser.metadata.role);
 
         if (!recipientEmail) {
           this.logger.warn(`No email found for recipient ${recipient.userId}`);
@@ -149,4 +154,53 @@ export class WebhooksService {
 
     return { success: true };
   }
+  
+  private async getUserEmailFromDatabase(userId: string, role?: 'attorney' | 'client'): Promise<string | null> {
+    const supabase = this.supabaseService.getClient();
+    console.log(role);
+    
+    // If role is specified, only check that table
+    if (role) {
+      const { data, error } = await supabase
+        .from(role === 'attorney' ? 'attorneys' : 'users')
+        .select('email')
+        .eq('id', userId)
+        .single();
+        
+      if (error) {
+        this.logger.error(`Error fetching email for user ${userId}: ${error.message}`);
+        return null;
+      }
+      
+      return data?.email || null;
+    }
+    
+    // If no role is specified, check attorneys table first, then users table
+    const { data: attorneyData, error: attorneyError } = await supabase
+      .from('attorneys')
+      .select('email')
+      .eq('id', userId)
+      .single();
+      
+    if (!attorneyError && attorneyData?.email) {
+      return attorneyData.email;
+    }
+    
+    // If not found in attorneys table or there was an error, check users table
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('email')
+      .eq('id', userId)
+      .single();
+      
+    if (userError) {
+      this.logger.error(`Error fetching email for user ${userId} from both tables`);
+      return null;
+    }
+    
+    return userData?.email || null;
+  }
+  
 }
+
+  

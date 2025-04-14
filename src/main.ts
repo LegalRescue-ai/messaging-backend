@@ -14,10 +14,11 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   logger.log('NestJS application created');
   
+  
   // Enable CORS with WebSocket support
   const allowedOrigins = [
     'http://localhost:3000',
-    'http://localhost:3002',
+    'http://localhost:5173',
     'https://main.dpfd8ph4b67cm.amplifyapp.com',
     'https://legal-chat-frontend.onrender.com',
     process.env.FRONTEND_URL,

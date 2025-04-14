@@ -39,7 +39,6 @@ export class SendbirdService {
           // Store additional metadata
           this.sb.currentUser.createMetaData({ 
             role, 
-            email,
           }, (metaDataResponse, metaDataError) => {
             if (metaDataError) {
               console.log("Meta data error", metaDataError)
@@ -99,6 +98,7 @@ export class SendbirdService {
       this.logger.error(`Error getting user by id: ${userId} ${this.configService.get<string>('sendbird.apiToken')}`);
       return null;
     } 
+    
     return user.data;
   }
 
