@@ -37,8 +37,9 @@ export class SendbirdService {
           }
   
           // Store additional metadata
-          this.sb.currentUser.createMetaData({ 
-            role, 
+          this.sb.currentUser.createMetaData({
+            role,
+            email
           }, (metaDataResponse, metaDataError) => {
             if (metaDataError) {
               console.log("Meta data error", metaDataError)

@@ -3,11 +3,14 @@ import { Controller, Post, Get, Body, Param } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { SendbirdService } from '../sendbird/sendbird.service';
 import { UserDto } from './dto/create-user.dto';
+import { ConfigService } from '@nestjs/config';
 
 @ApiTags('users')
 @Controller('users')
 export class UsersController {
-  constructor(private readonly sendbirdService: SendbirdService) {}
+  constructor(private readonly sendbirdService: SendbirdService,
+    private configService: ConfigService
+  ) {}
 
   @Post('register')
   @ApiOperation({ summary: 'Register a new user in Sendbird' })
@@ -41,6 +44,11 @@ async loginUser(@Body() loginUserDto: UserDto) {
   const user = await this.sendbirdService.getUserInfoById(loginUserDto.id);
   
   if (user) {
+    let sessionToken = this.configService.get(loginUserDto.id)?.accessToken;
+    if (!sessionToken) {
+      sessionToken = await this.sendbirdService.getUserSessions(loginUserDto.id);
+    }
+      
     if ((!user.profileUrl || user.profileUrl === '' || user.profileUrl !== loginUserDto.profileUrl) && loginUserDto.profileUrl) {
       console.log("Updating user profile URL:", loginUserDto.profileUrl);
       const updatedUser = await this.sendbirdService.updateUser(
@@ -49,14 +57,14 @@ async loginUser(@Body() loginUserDto: UserDto) {
           profileUrl: loginUserDto.profileUrl
         }
       );
-      
+    
       // Return updated user info
       return {
         sendbirdUserId: updatedUser.userId,
         nickname: updatedUser.nickname,
         role: loginUserDto.role,
         profileUrl: updatedUser.profileUrl,
-        
+        accessToken: sessionToken       
       };
     }
     
@@ -66,7 +74,7 @@ async loginUser(@Body() loginUserDto: UserDto) {
       nickname: user.nickname,
       role: loginUserDto.role,
       profileUrl: user.profileUrl,
-      accessToken: user.accessToken,
+      accessToken: sessionToken,
     };
   } else {
     // Create new user if doesn't exist
@@ -77,12 +85,17 @@ async loginUser(@Body() loginUserDto: UserDto) {
       loginUserDto.email,
       loginUserDto.profileUrl,
     );
+    let sessionToken = this.configService.get(newUser.userId)?.accessToken;
+    if (!sessionToken) {
+      sessionToken = await this.sendbirdService.getUserSessions(newUser.userId);
+    }
     
     return {
       sendbirdUserId: newUser.userId,
       nickname: newUser.nickname,
       role: loginUserDto.role,
       profileUrl: newUser.profileUrl,
+      accessToken: sessionToken
     };
   }
 }
