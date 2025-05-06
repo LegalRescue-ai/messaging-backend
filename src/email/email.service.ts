@@ -1,3 +1,4 @@
+/* eslint-disable prettier/prettier */
 // src/email/email.service.ts
 import { Injectable, Logger } from '@nestjs/common';
 import { google } from 'googleapis';
@@ -181,56 +182,103 @@ async sendEmail(
   return text.trim();
 }
 
-
-  private createRawEmail(
-    to: string,
-    subject: string,
-    body: string,
-    attachments?: { filename: string; data: Buffer }[],
-  ): string {
-    const boundary = 'boundary_000000';
-    let messageParts = [
-      `From: ${this.credentials.client_email}`,
-      `To: ${to}`,
-      `Subject: ${subject}`,
-      `MIME-Version: 1.0`,
-      `Content-Type: multipart/mixed; boundary="${boundary}"`,
-      '',
-      `--${boundary}`,
-      `Content-Type: text/html; charset="UTF-8"`,
-      `Content-Transfer-Encoding: 7bit`,
-      '',
-      body,
-      '', // Add an extra empty line for spacing
-      '<hr>', // Horizontal rule to separate the body from the footer
-      '<p>', // Paragraph for the footer text
-      'You can reply to this email directly or through our app: ',
-      `<a href=${this.configService.get("clientEndpoint")}>Our App</a>`, // Clickable link
-      '</p>',
-    ];
-
-    if (attachments && attachments.length > 0) {
-      for (const attachment of attachments) {
-        const encodedAttachment = attachment.data.toString('base64');
-        messageParts = messageParts.concat([
-          `--${boundary}`,
-          `Content-Type: application/octet-stream; name="${attachment.filename}"`,
-          `Content-Disposition: attachment; filename="${attachment.filename}"`,
-          `Content-Transfer-Encoding: base64`,
-          '',
-          encodedAttachment,
-        ]);
-      }
+private getLogoAsBase64(): { base64Data: string; mimeType: string } {
+  try {
+    // Get logo from assets folder (typical NestJS structure)
+    const logoPath = path.join(process.cwd(), 'src', 'assets', 'logo.png');
+    const logoData = fs.readFileSync(logoPath);
+    const base64Logo = logoData.toString('base64');
+    
+    // Get file extension for correct MIME type (assuming PNG, modify if different)
+    const fileExtension = logoPath.split('.').pop()?.toLowerCase();
+    let mimeType = 'image/png'; // Default
+    
+    if (fileExtension === 'jpg' || fileExtension === 'jpeg') {
+      mimeType = 'image/jpeg';
+    } else if (fileExtension === 'gif') {
+      mimeType = 'image/gif';
     }
-    messageParts.push(`--${boundary}--`);
-    const message = messageParts.join('\r\n');
-    return Buffer.from(message)
-      .toString('base64')
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_')
-      .replace(/=+$/, '');
+    
+    return { base64Data: base64Logo, mimeType };
+  } catch (error) {
+    console.error('Error loading logo:', error);
+    return { base64Data: '', mimeType: '' };
   }
+}
 
+public createRawEmail(
+  to: string,
+  subject: string,
+  body: string,
+  attachments?: { filename: string; data: Buffer }[],
+): string {
+  const boundary = 'boundary_000000';
+  
+  // Get the logo data
+  const { base64Data: logoBase64, mimeType } = this.getLogoAsBase64();
+  
+  // Create HTML email
+  let htmlBody = body;
+  
+  // Add footer with text
+  htmlBody += `
+    <hr style="margin-top: 30px; border: 0; border-top: 1px solid #eee;">
+    <div style="margin-top: 20px; text-align: left;">
+      <p style="font-size: 12px; color: #666; margin-bottom: 15px;">
+        You can reply to this email directly or log on to: 
+        <a href="${this.configService.get("clientEndpoint")}">LegalRescue.ai</a>
+      </p>`;
+  
+  // Add logo if available, centered and larger
+  if (logoBase64) {
+    htmlBody += `
+      <div style="text-align: left; margin: 15px auto;">
+        <img src="data:${mimeType};base64,${logoBase64}" alt="Company Logo" style="height: 100px; max-width: 300px;" />
+      </div>`;
+  }
+  
+  htmlBody += `
+    </div>`;
+  
+  // Create message parts
+  const messageParts = [
+    `From: ${this.credentials.client_email}`,
+    `To: ${to}`,
+    `Subject: ${subject}`,
+    `MIME-Version: 1.0`,
+    `Content-Type: multipart/mixed; boundary="${boundary}"`,
+    '',
+    `--${boundary}`,
+    `Content-Type: text/html; charset="UTF-8"`,
+    `Content-Transfer-Encoding: 7bit`,
+    '',
+    htmlBody,
+  ];
+
+  // Add attachments
+  if (attachments && attachments.length > 0) {
+    for (const attachment of attachments) {
+      const encodedAttachment = attachment.data.toString('base64');
+      messageParts.push(
+        `--${boundary}`,
+        `Content-Type: application/octet-stream; name="${attachment.filename}"`,
+        `Content-Disposition: attachment; filename="${attachment.filename}"`,
+        `Content-Transfer-Encoding: base64`,
+        '',
+        encodedAttachment
+      );
+    }
+  }
+  
+  messageParts.push(`--${boundary}--`);
+  const message = messageParts.join('\r\n');
+  
+  return Buffer.from(message)
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+}
   // Utility function for NestJS (non-browser environment)
 
 
