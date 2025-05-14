@@ -332,8 +332,8 @@ export class EmailService {
 
     if (logoBase64) {
       htmlBody += `
-    <div style="text-align: left; margin: 15px auto;">
-      <img src="data:${mimeType};base64,${logoBase64}" alt="Company Logo" style="height: 100px; max-width: 300px;" />
+    <div style="text-align: left; margin: 15px auto; ">
+      <img src="data:${mimeType};base64,${logoBase64}" alt="Company Logo" style="width: 100%; max-height: 150px; object-fit: contain;" />
     </div>`;
     }
 
