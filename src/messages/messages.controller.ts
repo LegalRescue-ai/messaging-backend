@@ -8,7 +8,10 @@ import { ReactionDto } from './dto/reaction.dto';
 @ApiTags('messages')
 @Controller('messages')
 export class MessagesController {
-  constructor(private readonly sendbirdService: SendbirdService) {}
+  constructor(private readonly sendbirdService: SendbirdService) { }
+
+
+
 
   @Post('send')
   @ApiOperation({ summary: 'Send a message via Sendbird' })
@@ -20,6 +23,14 @@ export class MessagesController {
       messageDto.message,
       messageDto.fileUrl
     );
+  }
+
+  @Get('unread/:userId')
+  @ApiOperation({ summary: 'Get total unread message count for a user across all channels' })
+  @ApiResponse({ status: 200, description: 'Unread message count retrieved successfully' })
+  async getUnreadMessageCount(@Param('userId') userId: string) {
+    const count = await this.sendbirdService.getTotalUnreadMessageCount(userId);
+    return { unreadCount: count };
   }
 
   @Get(':channelUrl/:userId')
@@ -53,4 +64,5 @@ export class MessagesController {
     );
     return { success: true };
   }
+
 }

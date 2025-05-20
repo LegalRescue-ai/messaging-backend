@@ -16,26 +16,26 @@ export class SendbirdService {
   private readonly logger = new Logger(SendbirdService.name);
 
   constructor(private configService: ConfigService) {
-    this.sb = new SendBird({ appId: this.configService.get<string>('sendbird.appId')!,  });
+    this.sb = new SendBird({ appId: this.configService.get<string>('sendbird.appId')!, });
   }
 
 
   async createUser(userId: string, name: string, role: UserRole, email: string, profileUrl?: string) {
-    console.log("user in send bird", {userId, name, role, email, profileUrl})
+    console.log("user in send bird", { userId, name, role, email, profileUrl })
     return new Promise<SendBird.User>((resolve, reject) => {
       this.sb.connect(userId, (user, error) => {
         if (error) {
           reject(error);
           return;
         }
-  
+
         // Update user info with name and profile picture
         this.sb.updateCurrentUserInfo(name, profileUrl || '', (updatedUser, updateError) => {
           if (updateError) {
             reject(updateError);
             return;
           }
-  
+
           // Store additional metadata
           this.sb.currentUser.createMetaData({
             role,
@@ -47,7 +47,7 @@ export class SendbirdService {
               return;
             }
             console.log("Meta data response", metaDataResponse)
-  
+
             resolve(updatedUser);
           });
         });
@@ -59,33 +59,33 @@ export class SendbirdService {
     if (!sessionToken) {
       sessionToken = await this.getUserSessions(userId);
     }
-    
-    return new Promise<SendBird.User>((resolve, reject) => {
-        this.sb.connect(userId, sessionToken, (user, error) => {
-            if (error) {
-                reject(error);
-                return;
-            }
-    
-            // Update user info with name and profile picture
-            this.sb.updateCurrentUserInfo(
-                updateData.nickname || '', 
-                updateData.profileUrl || '', 
-                (updatedUser, updateError) => {
-                    if (updateError) {
-                        reject(updateError);
-                        return;
-                    }
-                    
-                    resolve(updatedUser);
-                }
-            );
-        });
-    });
-}
-  
 
-  getCurrentUser(){
+    return new Promise<SendBird.User>((resolve, reject) => {
+      this.sb.connect(userId, sessionToken, (user, error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        // Update user info with name and profile picture
+        this.sb.updateCurrentUserInfo(
+          updateData.nickname || '',
+          updateData.profileUrl || '',
+          (updatedUser, updateError) => {
+            if (updateError) {
+              reject(updateError);
+              return;
+            }
+
+            resolve(updatedUser);
+          }
+        );
+      });
+    });
+  }
+
+
+  getCurrentUser() {
     return this.sb.currentUser;
   }
 
@@ -95,15 +95,15 @@ export class SendbirdService {
         'Api-Token': this.configService.get<string>('sendbird.apiToken')!,
       },
     });
-    if(user.data.error === true && (user.data.code === 400201 || user.data.code === 400302)){
+    if (user.data.error === true && (user.data.code === 400201 || user.data.code === 400302)) {
       this.logger.error(`Error getting user by id: ${userId} ${this.configService.get<string>('sendbird.apiToken')}`);
       return null;
-    } 
-    
+    }
+
     return user.data;
   }
 
-  async reconnect(){
+  async reconnect() {
     this.sb.reconnect();
   }
 
@@ -116,17 +116,17 @@ export class SendbirdService {
       });
       return response.data;
     } catch (error) {
-      if (error.response && 
-          error.response.status === 400 && 
-          error.response.data.code === 400201) {
-        return null; 
+      if (error.response &&
+        error.response.status === 400 &&
+        error.response.data.code === 400201) {
+        return null;
       }
-   
+
       throw error;
     }
   }
 
-  async getUserSessions(userId: string): Promise<any> { 
+  async getUserSessions(userId: string): Promise<any> {
     try {
       const response = await axios.post(
         `https://api-${this.configService.get<string>('sendbird.appId')!}.sendbird.com/v3/users/${userId}/token`,
@@ -138,27 +138,27 @@ export class SendbirdService {
         },
       );
       return response.data.token;
-    } catch (error) { 
+    } catch (error) {
       console.error(
         'Error generating Sendbird session token:',
         error.response ? error.response.data : error.message,
-      );  
+      );
       return null;
     }
-    }
+  }
 
-  async getUserByEmail(name:string, email:string): Promise<any> {
+  async getUserByEmail(name: string, email: string): Promise<any> {
     try {
-      const token  = await this.getUserSessions(name);
-      if(token){
-        const user =  await this.sb.connect(name,token, (user, error) => { 
+      const token = await this.getUserSessions(name);
+      if (token) {
+        const user = await this.sb.connect(name, token, (user, error) => {
           if (error) {
             return error;
           }
           return user;
         });
-        this.configService.set(name,{email, user, token: token} );
-        return {...user, accessToken:token};
+        this.configService.set(name, { email, user, token: token });
+        return { ...user, accessToken: token };
       }
     } catch (error) {
       console.error(
@@ -174,24 +174,25 @@ export class SendbirdService {
     if (!sessionToken) {
       sessionToken = await this.getUserSessions(clientId);
     }
-    
+
     return new Promise<SendBird.GroupChannel>((resolve, reject) => {
       this.sb.connect(clientId, sessionToken, (user, error) => {
-         if (error) {
-           reject(error);
-           return;
-         }
-      const params = new this.sb.GroupChannelParams();
-      params.addUserIds([clientId, attorneyId]);
-      params.isDistinct = true;
-   
-      this.sb.GroupChannel.createChannel(params, (groupChannel, error) => {
         if (error) {
           reject(error);
           return;
         }
-        resolve(groupChannel);
-      })});
+        const params = new this.sb.GroupChannelParams();
+        params.addUserIds([clientId, attorneyId]);
+        params.isDistinct = true;
+
+        this.sb.GroupChannel.createChannel(params, (groupChannel, error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve(groupChannel);
+        })
+      });
     });
   }
 
@@ -201,31 +202,32 @@ export class SendbirdService {
       sessionToken = await this.getUserSessions(userId);
     }
     return new Promise<SendBird.UserMessage>((resolve, reject) => {
-      this.sb.connect(userId, sessionToken ,(user, error) => {
-         if (error) {
-           reject(error);
-           return;
-         }
-      this.sb.GroupChannel.getChannel(channelUrl, (groupChannel, error) => {
+      this.sb.connect(userId, sessionToken, (user, error) => {
         if (error) {
           reject(error);
           return;
         }
-
-        const params = new this.sb.UserMessageParams();
-        params.message = message;
-        if (fileUrl) {
-          params.data = JSON.stringify({ fileUrl });
-        }
-
-        groupChannel.sendUserMessage(params, (userMessage, error) => {
+        this.sb.GroupChannel.getChannel(channelUrl, (groupChannel, error) => {
           if (error) {
             reject(error);
             return;
           }
-          resolve(userMessage);
-        });
-      })});
+
+          const params = new this.sb.UserMessageParams();
+          params.message = message;
+          if (fileUrl) {
+            params.data = JSON.stringify({ fileUrl });
+          }
+
+          groupChannel.sendUserMessage(params, (userMessage, error) => {
+            if (error) {
+              reject(error);
+              return;
+            }
+            resolve(userMessage);
+          });
+        })
+      });
     });
   }
 
@@ -270,8 +272,8 @@ export class SendbirdService {
     if (!sessionToken) {
       sessionToken = await this.getUserSessions(userId);
     }
-    
-    
+
+
     return new Promise((resolve, reject) => {
       // First connect to SendBird
       this.sb.connect(userId, sessionToken, (user, error) => {
@@ -279,14 +281,14 @@ export class SendbirdService {
           reject(error);
           return;
         }
-        
+
         // After successful connection, get the channel
         this.sb.GroupChannel.getChannel(channelUrl, (groupChannel, error) => {
           if (error) {
             reject(error);
             return;
           }
-  
+
           const query = groupChannel.createPreviousMessageListQuery();
           query.limit = prevLimit || 30;
           query.reverse = true;
@@ -295,7 +297,7 @@ export class SendbirdService {
               reject(error);
               return;
             }
-            
+
             if (messageTimestamp) {
               const filteredMessages = messages.filter(m => m.createdAt >= messageTimestamp);
               resolve(filteredMessages as SendBird.UserMessage[]);
@@ -312,11 +314,11 @@ export class SendbirdService {
     return new Promise((resolve, reject) => {
       const blob = new Blob([buffer], { type: 'application/octet-stream' });
       const file = new File([blob], fileName);
-      
+
       // Create a temporary channel for file upload if needed
       const params = new this.sb.GroupChannelParams();
       params.name = 'Temporary Upload Channel';
-      
+
       this.sb.GroupChannel.createChannel(params, (channel, error) => {
         if (error) {
           reject(error);
@@ -361,7 +363,7 @@ export class SendbirdService {
     });
   }
 
-  async getGroupChannelMembers(senderId: string, channelUrl:string): Promise<SendBird.User[]> {
+  async getGroupChannelMembers(senderId: string, channelUrl: string): Promise<SendBird.User[]> {
     let sessionToken = this.configService.get(senderId)?.accessToken;
     if (!sessionToken) {
       sessionToken = await this.getUserSessions(senderId);
@@ -412,13 +414,13 @@ export class SendbirdService {
     try {
       const query = this.sb.GroupChannel.createMyGroupChannelListQuery();
       const channels = await query.next();
-      
+
       for (const channel of channels) {
         try {
           const messageQuery = channel.createPreviousMessageListQuery();
           messageQuery.limit = 100;
           messageQuery.reverse = true;
-          
+
           const messages = await new Promise<SendBird.BaseMessageInstance[]>((resolve, reject) => {
             messageQuery.load((messages, error) => {
               if (error) {
@@ -428,7 +430,7 @@ export class SendbirdService {
               resolve(messages);
             });
           });
-          
+
           const targetMessage = messages.find(msg => msg.messageId.toString() === messageId);
           if (targetMessage) {
             return {
@@ -436,12 +438,12 @@ export class SendbirdService {
               channelUrl: channel.url,
             };
           }
-        } catch (error:any) {
+        } catch (error: any) {
           console.log(error)
           continue;
         }
       }
-      
+
       return null;
     } catch (error) {
       this.logger.error(`Failed to get message: ${error.message}`, error.stack);
@@ -449,8 +451,8 @@ export class SendbirdService {
     }
   }
 
-  async saveMetaData(channel_type:string, channel_url:string, message_id:string, metadata: any): Promise<any> {  
-    try{
+  async saveMetaData(channel_type: string, channel_url: string, message_id: string, metadata: any): Promise<any> {
+    try {
       const appId = this.configService.get<string>('sendbird.appId')!;
       const response = await axios.post(
         `https://https://api-${appId}.sendbird.com/v3/${channel_type}/${channel_url}/messages/${message_id}/sorted_metaarray`,
@@ -458,15 +460,15 @@ export class SendbirdService {
           sorted_metaarray: metadata,
         },
       );
-      if(response.data.error ===  true && response.data.code === 400301){
+      if (response.data.error === true && response.data.code === 400301) {
         return response.data;
       }
-}
-  catch (error) {
-    this.logger.error(`Failed to save metadata: ${error.message}`, error.stack);
-    throw error;
+    }
+    catch (error) {
+      this.logger.error(`Failed to save metadata: ${error.message}`, error.stack);
+      throw error;
+    }
   }
-}
 
   async sendFileMessage(
     channelUrl: string,
@@ -477,34 +479,64 @@ export class SendbirdService {
     try {
       const channel = await this.sb.GroupChannel.getChannel(channelUrl);
       const params = new this.sb.FileMessageParams();
-      
+
       // Create a file object that matches SendBird's requirements
       const file = new File([''], fileName, { type: 'application/octet-stream' });
       params.file = file;
-      
+
       // Add custom data to be used by the app
       params.customType = 'external_file';
       params.data = JSON.stringify({
         url: fileUrl,
         name: fileName
       });
-      
+
       return await new Promise((resolve, reject) => {
         this.sb.connect(userId, (user, error) => {
-         if (error) {
-           reject(error);
-           return;
-         }
-        channel.sendFileMessage(params, (message, error) => {
           if (error) {
             reject(error);
             return;
           }
-          resolve(message);
-        })});
+          channel.sendFileMessage(params, (message, error) => {
+            if (error) {
+              reject(error);
+              return;
+            }
+            resolve(message);
+          })
+        });
       });
     } catch (error) {
       this.logger.error(`Failed to send file message: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+  async getTotalUnreadMessageCount(userId: string): Promise<number> {
+    console.log("userId", userId)
+    try {
+      console.log("userid", userId)
+      // Get or create session token
+      let sessionToken = this.configService.get(userId)?.accessToken;
+      if (!sessionToken) {
+        sessionToken = await this.getUserSessions(userId);
+      }
+
+      // Connect to SendBird first
+      await new Promise<void>((resolve, reject) => {
+        this.sb.connect(userId, sessionToken, (user, error) => {
+          if (error) {
+            reject(error);
+          } else {
+            resolve();
+          }
+
+        });
+      });
+
+      // Use the Promise-based method directly without a callback
+      return await this.sb.getTotalUnreadMessageCount();
+    } catch (error) {
+      this.logger.error(`Failed to get total unread message count: ${error.message}`, error.stack);
       throw error;
     }
   }
