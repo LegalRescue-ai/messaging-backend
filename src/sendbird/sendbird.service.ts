@@ -540,4 +540,95 @@ export class SendbirdService {
       throw error;
     }
   }
+
+  // Add these methods to your SendbirdService class
+
+  async createChannelMetadata(
+    channelUrl: string,
+    caseId: string,
+    fullNames: string,
+  ): Promise<any> {
+    console.log("creating metadata")
+    try {
+      const appId = this.configService.get<string>('sendbird.appId')!;
+      const apiToken = this.configService.get<string>('sendbird.apiToken')!;
+
+      const metadata = {
+        [caseId]: fullNames
+      };
+
+      const response = await axios.post(
+        `https://api-${appId}.sendbird.com/v3/group_channels/${channelUrl}/metadata`,
+        {
+          metadata,
+          include_ts: true
+        },
+        {
+          headers: {
+            'Api-Token': apiToken,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      console.log("response", response.data)
+
+      return response.data;
+    } catch (error) {
+      this.logger.error(`Failed to create channel metadata: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  async getChannelMetadata(
+    channelUrl: string,
+    keys?: string[]
+  ): Promise<any> {
+    try {
+      const appId = this.configService.get<string>('sendbird.appId')!;
+      const apiToken = this.configService.get<string>('sendbird.apiToken')!;
+
+      let url = `https://api-${appId}.sendbird.com/v3/group_channels/${channelUrl}/metadata`;
+
+      // Add query parameters if keys are specified
+      if (keys && keys.length > 0) {
+        const queryParams = keys.map(key => `keys=${encodeURIComponent(key)}`).join('&');
+        url += `?${queryParams}`;
+      }
+
+      const response = await axios.get(url, {
+        headers: {
+          'Api-Token': apiToken
+        }
+      });
+
+      return response.data;
+    } catch (error) {
+      this.logger.error(`Failed to get channel metadata: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  async getChannelMetadataByKey(
+    channelUrl: string,
+    key: string
+  ): Promise<any> {
+    try {
+      const appId = this.configService.get<string>('sendbird.appId')!;
+      const apiToken = this.configService.get<string>('sendbird.apiToken')!;
+
+      const response = await axios.get(
+        `https://api-${appId}.sendbird.com/v3/group_channels/${channelUrl}/metadata/${encodeURIComponent(key)}`,
+        {
+          headers: {
+            'Api-Token': apiToken
+          }
+        }
+      );
+
+      return response.data;
+    } catch (error) {
+      this.logger.error(`Failed to get channel metadata by key: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
 }
