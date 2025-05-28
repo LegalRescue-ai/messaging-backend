@@ -19,9 +19,8 @@ export class SendbirdService {
     this.sb = new SendBird({ appId: this.configService.get<string>('sendbird.appId')!, });
   }
 
-
-  async createUser(userId: string, name: string, role: UserRole, email: string, profileUrl?: string) {
-    console.log("user in send bird", { userId, name, role, email, profileUrl })
+  async createUser(userId: string, name: string, role: UserRole, email: string, lawFirm?: string, profileUrl?: string) {
+    console.log("user in send bird", { userId, name, role, email, lawFirm, profileUrl })
     return new Promise<SendBird.User>((resolve, reject) => {
       this.sb.connect(userId, (user, error) => {
         if (error) {
@@ -36,17 +35,23 @@ export class SendbirdService {
             return;
           }
 
-          // Store additional metadata
-          this.sb.currentUser.createMetaData({
+          // Store additional metadata - only include lawFirm if provided
+          const metadata: any = {
             role,
             email
-          }, (metaDataResponse, metaDataError) => {
+          };
+
+          if (lawFirm) {
+            metadata.lawFirm = lawFirm;
+          }
+
+          this.sb.currentUser.createMetaData(metadata, (metaDataResponse, metaDataError) => {
             if (metaDataError) {
-              console.log("Meta data error", metaDataError)
+              console.log("Meta data error", metaDataError);
               reject(metaDataError);
               return;
             }
-            console.log("Meta data response", metaDataResponse)
+            console.log("Meta data response", metaDataResponse);
 
             resolve(updatedUser);
           });
@@ -54,6 +59,34 @@ export class SendbirdService {
       });
     });
   }
+
+  async createMetadata(role: UserRole, email: string, lawFirm?: string): Promise<any> {
+    return new Promise((resolve, reject) => {
+      // Only include lawFirm if provided
+      const metadata: any = {
+        role,
+        email
+      };
+
+      if (lawFirm) {
+        metadata.lawFirm = lawFirm;
+      }
+
+      this.sb.currentUser.createMetaData(metadata, (metaDataResponse, metaDataError) => {
+        if (metaDataError) {
+          console.log("Meta data error", metaDataError);
+          reject(metaDataError);
+          return;
+        }
+        console.log("Meta data response", metaDataResponse);
+
+        resolve(metaDataResponse);
+      });
+    });
+  }
+
+
+
   async updateUser(userId: string, updateData: { profileUrl?: string, nickname?: string }): Promise<SendBird.User> {
     let sessionToken = this.configService.get(userId)?.accessToken;
     if (!sessionToken) {

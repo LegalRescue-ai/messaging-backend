@@ -5,13 +5,13 @@ import { UserDto } from './dto/create-user.dto';
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly sendbirdService: SendbirdService) {}
+  constructor(private readonly sendbirdService: SendbirdService) { }
 
   async createUser(createUserDto: UserDto) {
-    const { name, email, role, profileUrl, id } = createUserDto;
+    const { name, email, role, lawFirm, profileUrl, id } = createUserDto;
     console.log("user in user service", createUserDto)
 
-    
+
     const userId = id;
 
     // Create user in Sendbird
@@ -20,6 +20,7 @@ export class UsersService {
       name,
       role,
       email,
+      lawFirm,
       profileUrl
     );
 

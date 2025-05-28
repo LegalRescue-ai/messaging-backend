@@ -29,10 +29,17 @@ export class UserDto {
   })
   @IsEnum(UserRole)
   role: UserRole;
-@IsString()
-profileUrl?: string;
+
+  @ApiProperty({
+    example: 'John Doe Law Firms',
+    description: 'The user Law Firm Name',
+  })
+  @IsString()
+  lawFirm?: string;
+  @IsString()
+  profileUrl?: string;
 
   @IsString()
   @IsNotEmpty()
-  id:string
+  id: string
 }

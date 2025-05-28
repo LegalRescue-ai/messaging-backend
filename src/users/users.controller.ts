@@ -10,7 +10,7 @@ import { ConfigService } from '@nestjs/config';
 export class UsersController {
   constructor(private readonly sendbirdService: SendbirdService,
     private configService: ConfigService
-  ) {}
+  ) { }
 
   @Post('register')
   @ApiOperation({ summary: 'Register a new user in Sendbird' })
@@ -22,6 +22,7 @@ export class UsersController {
       createUserDto.name,
       createUserDto.role,
       createUserDto.email,
+      createUserDto.lawFirm,
       createUserDto.profileUrl,
     );
 
@@ -33,72 +34,78 @@ export class UsersController {
     };
   }
 
- 
 
- @Post('login')
-@ApiOperation({ summary: 'Login a user in Sendbird' })
-@ApiResponse({ status: 201, description: 'User successfully logged in' })
-async loginUser(@Body() loginUserDto: UserDto) {
-  console.log("user in controller", loginUserDto);
-  
-  const user = await this.sendbirdService.getUserInfoById(loginUserDto.id);
-  
-  if (user) {
-    let sessionToken = this.configService.get(loginUserDto.id)?.accessToken;
-    if (!sessionToken) {
-      sessionToken = await this.sendbirdService.getUserSessions(loginUserDto.id);
-    }
-      
-    if ((!user.profileUrl || user.profileUrl === '' || user.profileUrl !== loginUserDto.profileUrl) && loginUserDto.profileUrl) {
-      console.log("Updating user profile URL:", loginUserDto.profileUrl);
-      const updatedUser = await this.sendbirdService.updateUser(
-        loginUserDto.id,
-        {
-          profileUrl: loginUserDto.profileUrl
-        }
-      );
-    
-      // Return updated user info
+
+  @Post('login')
+  @ApiOperation({ summary: 'Login a user in Sendbird' })
+  @ApiResponse({ status: 201, description: 'User successfully logged in' })
+  async loginUser(@Body() loginUserDto: UserDto) {
+    console.log("user in controller", loginUserDto);
+
+    const user = await this.sendbirdService.getUserInfoById(loginUserDto.id);
+
+    if (user) {
+      let sessionToken = this.configService.get(loginUserDto.id)?.accessToken;
+      if (!sessionToken) {
+        sessionToken = await this.sendbirdService.getUserSessions(loginUserDto.id);
+      }
+
+      if ((!user.profileUrl || user.profileUrl === '' || user.profileUrl !== loginUserDto.profileUrl) && loginUserDto.profileUrl) {
+        console.log("Updating user profile URL:", loginUserDto.profileUrl);
+        const updatedUser = await this.sendbirdService.updateUser(
+          loginUserDto.id,
+          {
+            profileUrl: loginUserDto.profileUrl
+          }
+        );
+
+        await this.sendbirdService.createMetadata(
+          loginUserDto.role,
+          loginUserDto.email,
+          loginUserDto.lawFirm,
+        );
+        // Return updated user info
+        return {
+          sendbirdUserId: updatedUser.userId,
+          nickname: updatedUser.nickname,
+          role: loginUserDto.role,
+          profileUrl: updatedUser.profileUrl,
+          accessToken: sessionToken
+        };
+      }
+
+      // Return existing user info if no update needed
       return {
-        sendbirdUserId: updatedUser.userId,
-        nickname: updatedUser.nickname,
+        sendbirdUserId: user.userId,
+        nickname: user.nickname,
         role: loginUserDto.role,
-        profileUrl: updatedUser.profileUrl,
-        accessToken: sessionToken       
+        profileUrl: user.profileUrl,
+        accessToken: sessionToken,
+      };
+    } else {
+      // Create new user if doesn't exist
+      const newUser = await this.sendbirdService.createUser(
+        loginUserDto.id,
+        loginUserDto.name,
+        loginUserDto.role,
+        loginUserDto.email,
+        loginUserDto.lawFirm,
+        loginUserDto.profileUrl,
+      );
+      let sessionToken = this.configService.get(newUser.userId)?.accessToken;
+      if (!sessionToken) {
+        sessionToken = await this.sendbirdService.getUserSessions(newUser.userId);
+      }
+
+      return {
+        sendbirdUserId: newUser.userId,
+        nickname: newUser.nickname,
+        role: loginUserDto.role,
+        profileUrl: newUser.profileUrl,
+        accessToken: sessionToken
       };
     }
-    
-    // Return existing user info if no update needed
-    return {
-      sendbirdUserId: user.userId,
-      nickname: user.nickname,
-      role: loginUserDto.role,
-      profileUrl: user.profileUrl,
-      accessToken: sessionToken,
-    };
-  } else {
-    // Create new user if doesn't exist
-    const newUser = await this.sendbirdService.createUser(
-      loginUserDto.id,
-      loginUserDto.name,
-      loginUserDto.role,
-      loginUserDto.email,
-      loginUserDto.profileUrl,
-    );
-    let sessionToken = this.configService.get(newUser.userId)?.accessToken;
-    if (!sessionToken) {
-      sessionToken = await this.sendbirdService.getUserSessions(newUser.userId);
-    }
-    
-    return {
-      sendbirdUserId: newUser.userId,
-      nickname: newUser.nickname,
-      role: loginUserDto.role,
-      profileUrl: newUser.profileUrl,
-      accessToken: sessionToken
-    };
   }
-}
 
   @Get(':sendbirdUserId')
   @ApiOperation({ summary: 'Get user details from Sendbird' })
@@ -108,7 +115,7 @@ async loginUser(@Body() loginUserDto: UserDto) {
   })
   async getUserDetails(@Param('sendbirdUserId') sendbirdUserId: string) {
     const user = await this.sendbirdService.getUserById(sendbirdUserId);
-    if(!user){  
+    if (!user) {
       return {
         message: 'User not found',
       };
