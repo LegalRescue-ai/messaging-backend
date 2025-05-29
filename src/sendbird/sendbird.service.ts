@@ -60,17 +60,22 @@ export class SendbirdService {
     });
   }
 
-  async createMetadata(role: UserRole, email: string, lawFirm?: string): Promise<any> {
+  async createMetadata(data: { role?: UserRole, email?: string, lawFirm?: string }): Promise<any> {
     return new Promise((resolve, reject) => {
       // Only include lawFirm if provided
-      const metadata: any = {
-        role,
-        email
-      };
+      const metadata: any = {};
 
-      if (lawFirm) {
-        metadata.lawFirm = lawFirm;
+      if (data.lawFirm) {
+        metadata.lawFirm = data.lawFirm;
       }
+      if (data.role) {
+        metadata.role = data.role;
+      }
+      if (data.email) {
+        metadata.email = data.email;
+      }
+
+      console.log("Meta data", metadata);
 
       this.sb.currentUser.createMetaData(metadata, (metaDataResponse, metaDataError) => {
         if (metaDataError) {

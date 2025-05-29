@@ -2,7 +2,7 @@
 import { Controller, Post, Get, Body, Param } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { SendbirdService } from '../sendbird/sendbird.service';
-import { UserDto } from './dto/create-user.dto';
+import { UserDto, UserRole } from './dto/create-user.dto';
 import { ConfigService } from '@nestjs/config';
 
 @ApiTags('users')
@@ -35,14 +35,17 @@ export class UsersController {
   }
 
 
-
+  @Post('login')
+  @ApiOperation({ summary: 'Login a user in Sendbird' })
+  @ApiResponse({ status: 201, description: 'User successfully logged in' })
   @Post('login')
   @ApiOperation({ summary: 'Login a user in Sendbird' })
   @ApiResponse({ status: 201, description: 'User successfully logged in' })
   async loginUser(@Body() loginUserDto: UserDto) {
-    console.log("user in controller", loginUserDto);
 
     const user = await this.sendbirdService.getUserInfoById(loginUserDto.id);
+
+    console.log("debugging user", user);
 
     if (user) {
       let sessionToken = this.configService.get(loginUserDto.id)?.accessToken;
@@ -50,6 +53,7 @@ export class UsersController {
         sessionToken = await this.sendbirdService.getUserSessions(loginUserDto.id);
       }
 
+      // Check if profile URL needs updating
       if ((!user.profileUrl || user.profileUrl === '' || user.profileUrl !== loginUserDto.profileUrl) && loginUserDto.profileUrl) {
         console.log("Updating user profile URL:", loginUserDto.profileUrl);
         const updatedUser = await this.sendbirdService.updateUser(
@@ -59,11 +63,41 @@ export class UsersController {
           }
         );
 
-        await this.sendbirdService.createMetadata(
-          loginUserDto.role,
-          loginUserDto.email,
-          loginUserDto.lawFirm,
-        );
+        // Check if user already has required metadata
+        const hasEmail = user.metadata && user.metadata.email;
+        const hasRole = user.metadata && user.metadata.role;
+        const hasLawFirm = user.metadata && user.metadata.lawFirm;
+
+        // For attorneys, check if lawFirm is also present
+        const isAttorney = loginUserDto.role === UserRole.ATTORNEY;
+        const hasRequiredMetadata = hasEmail && hasRole && (!isAttorney || hasLawFirm);
+
+        if (!hasRequiredMetadata) {
+          console.log("Adding missing metadata for user:", loginUserDto.id);
+
+          // Only create metadata for fields that don't exist yet
+          const missingMetadata: any = {};
+          if (!hasEmail && loginUserDto.email) {
+            missingMetadata.email = loginUserDto.email;
+          }
+          if (!hasRole && loginUserDto.role) {
+            missingMetadata.role = loginUserDto.role;
+          }
+          if (isAttorney && !hasLawFirm && loginUserDto.lawFirm) {
+            missingMetadata.lawFirm = loginUserDto.lawFirm;
+          }
+
+          // Only call createMetadata if there are actually missing fields to add
+          if (Object.keys(missingMetadata).length > 0) {
+            console.log("Missing metadata fields:", Object.keys(missingMetadata));
+            await this.sendbirdService.createMetadata(
+              missingMetadata
+            );
+          }
+        } else {
+          console.log("User already has all required metadata, skipping creation");
+        }
+
         // Return updated user info
         return {
           sendbirdUserId: updatedUser.userId,
