@@ -20,7 +20,7 @@ export class SendbirdService {
   }
 
   async createUser(userId: string, name: string, role: UserRole, email: string, lawFirm?: string, profileUrl?: string) {
-    console.log("user in send bird", { userId, name, role, email, lawFirm, profileUrl })
+
     return new Promise<SendBird.User>((resolve, reject) => {
       this.sb.connect(userId, (user, error) => {
         if (error) {
@@ -75,7 +75,7 @@ export class SendbirdService {
         metadata.email = data.email;
       }
 
-      console.log("Meta data", metadata);
+
 
       this.sb.currentUser.createMetaData(metadata, (metaDataResponse, metaDataError) => {
         if (metaDataError) {
@@ -83,7 +83,7 @@ export class SendbirdService {
           reject(metaDataError);
           return;
         }
-        console.log("Meta data response", metaDataResponse);
+
 
         resolve(metaDataResponse);
       });
