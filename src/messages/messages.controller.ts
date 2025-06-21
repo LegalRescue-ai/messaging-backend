@@ -24,6 +24,7 @@ export class MessagesController {
       messageDto.fileUrl
     );
   }
+  
 
   @Get('unread/:userId')
   @ApiOperation({ summary: 'Get total unread message count for a user across all channels' })
@@ -43,6 +44,7 @@ export class MessagesController {
     @Query('prevLimit') prevLimit?: number,
     @Query('nextLimit') nextLimit?: number,
   ) {
+    console.log("calling this api for testing")
     return await this.sendbirdService.getMessages(
       channelUrl,
       userId,
@@ -50,6 +52,14 @@ export class MessagesController {
       prevLimit,
       nextLimit
     );
+  }
+    
+  @Get('/channel/total-count/:channelUrl')
+  @ApiOperation({summary:"Get total message count for a channel"})
+  @ApiResponse({status:200, description:'Total message count retrived successfully'})
+  async getTotalChannelMessageCount(@Param('channelUrl') channelUrl:string){
+    const count = await this.sendbirdService.getTotalChannelMessageCount(channelUrl)
+    return count
   }
 
   @Post('react')

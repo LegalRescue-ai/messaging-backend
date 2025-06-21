@@ -493,7 +493,7 @@ export class SendbirdService {
     try {
       const appId = this.configService.get<string>('sendbird.appId')!;
       const response = await axios.post(
-        `https://https://api-${appId}.sendbird.com/v3/${channel_type}/${channel_url}/messages/${message_id}/sorted_metaarray`,
+        `https://api-${appId}.sendbird.com/v3/${channel_type}/${channel_url}/messages/${message_id}/sorted_metaarray`,
         {
           sorted_metaarray: metadata,
         },
@@ -579,7 +579,35 @@ export class SendbirdService {
     }
   }
 
-  // Add these methods to your SendbirdService class
+  async getTotalChannelMessageCount(channelUrl:string){
+    try{
+      const appId = this.configService.get<string>('sendbird.appId')!;
+      const apiToken = this.configService.get<string>('sendbird.apiToken')!;
+      const response = await axios.get(
+        `https://api-${appId}.sendbird.com/v3/group_channels/${channelUrl}/messages/total_count`,
+        {
+          headers: {
+            'Api-Token': apiToken
+          }
+        }
+      )
+      const count:{
+        "totalCount": {
+    "total": number,
+    "MESG": number,
+    "FILE": number,
+    "ADMM": number
+  }
+      } = response.data
+      return count
+
+
+    }catch(error){
+      this.logger.error(`Failed to get total channel message count: ${error.message}`, error.stack)
+    }
+  }
+
+ 
 
   async createChannelMetadata(
     channelUrl: string,
