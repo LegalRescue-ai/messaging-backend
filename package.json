@@ -20,6 +20,8 @@
     "test:e2e": "jest --config ./test/jest-e2e.json"
   },
   "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.812.0",
+    "@aws-sdk/lib-dynamodb": "^3.812.0",
     "@emailjs/nodejs": "^5.0.2",
     "@google-cloud/pubsub": "^4.10.0",
     "@nestjs/axios": "^4.0.0",

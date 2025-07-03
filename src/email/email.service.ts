@@ -182,9 +182,10 @@ export class EmailService {
     subject: string,
     body: string,
     attachments?: { filename: string; data: Buffer }[],
+    recipientRole?: 'client' | 'attorney'
   ): Promise<any> {
     try {
-      const raw = this.createRawEmail(to, subject, body, attachments);
+      const raw = this.createRawEmail(to, subject, body, attachments, recipientRole);
       const response = await this.gmail.users.messages.send({
         userId: 'me',
         requestBody: { raw },
@@ -309,6 +310,7 @@ export class EmailService {
     subject: string,
     body: string,
     attachments?: { filename: string; data: Buffer }[],
+    recipientRole?: 'client' | 'attorney'
   ): string {
     const boundary = 'boundary_000000';
 
@@ -318,15 +320,24 @@ export class EmailService {
     // Create HTML email
     let htmlBody = body;
 
-    // Add footer with text
+    // Add footer with dynamic text based on recipient role
     htmlBody += `
     <hr style="margin-top: 30px; border: 0; border-top: 1px solid #eee;">
     <div style="margin-top: 20px; text-align: left;">
-      <p style="font-size: 12px; color: #666; margin-bottom: 15px;">
-        You can reply to this email directly or log on to: 
-        <a href="${this.configService.get("clientEndpoint")}">LegalRescue.ai</a>
-      </p>`;
+      <p style="font-size: 12px; color: #666; margin-bottom: 15px;">`;
 
+    if (recipientRole === 'client') {
+      htmlBody += `You can respond to this attorney directly by replying to this email, or log on to: 
+        <a href="${this.configService.get("clientEndpoint")}">LegalRescue.ai</a> to message the attorney in the "Message Center"`;
+    } else if (recipientRole === 'attorney') {
+      htmlBody += `You can respond to this client directly by replying to this email, or log on to: 
+        <a href="${this.configService.get("clientEndpoint")}">LegalRescue.ai</a> to message the client in the "Message Center"`;
+    } else {
+      htmlBody += `You can reply to this email directly or log on to: 
+        <a href="${this.configService.get("clientEndpoint")}">LegalRescue.ai</a>`;
+    }
+
+    htmlBody += `</p>`;
 
     // Add logo if available, centered and larger
 

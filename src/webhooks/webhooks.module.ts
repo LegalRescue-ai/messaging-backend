@@ -5,7 +5,8 @@ import { ConfigModule } from '@nestjs/config';
 import { SendbirdModule } from '../sendbird/sendbird.module';
 import { EmailModule } from '../email/email.module';
 import { HttpModule } from '@nestjs/axios';
-import { SupabaseService } from 'supabase/supabase.service';
+import { DynamoService } from 'src/dynamo/dynamo.service';
+
 
 @Module({
   imports: [
@@ -18,7 +19,7 @@ import { SupabaseService } from 'supabase/supabase.service';
     EmailModule,
   ],
   controllers: [WebhooksController],
-  providers: [WebhooksService, SupabaseService],
+  providers: [WebhooksService, DynamoService],
   exports: [WebhooksService],
 })
-export class WebhooksModule {}
+export class WebhooksModule { }

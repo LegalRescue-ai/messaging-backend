@@ -10,6 +10,7 @@ import { RateLimiterMiddleware } from './common/middleware/rate-limiter.middlewa
 import { ChannelsModule } from './channels/channels.module';
 import { ContactsModule } from './contacts/contacts.module';
 import { EmailModule } from './email/email.module';
+import { DynamoModule } from './dynamo/dynamo.module';
 import configuration from './config/configuration';
 
 @Module({
@@ -27,6 +28,7 @@ import configuration from './config/configuration';
     ChannelsModule,
     ContactsModule,
     EmailModule,
+    DynamoModule,
   ],
 })
 export class AppModule {

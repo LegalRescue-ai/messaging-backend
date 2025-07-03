@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-call */
-/* eslint-disable @typescript-eslint/await-thenable */
 /* eslint-disable prettier/prettier */
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -7,7 +5,7 @@ import { verifySignature } from './utils/signature.util';
 import { SendbirdService } from '../sendbird/sendbird.service';
 import { EmailService } from '../email/email.service';
 import axios from 'axios';
-import { SupabaseService } from 'supabase/supabase.service';
+import { DynamoService } from 'src/dynamo/dynamo.service';
 
 
 @Injectable()
@@ -18,7 +16,7 @@ export class WebhooksService {
     private configService: ConfigService,
     private readonly sendbirdService: SendbirdService,
     private readonly emailService: EmailService,
-    private readonly supabaseService: SupabaseService
+    private readonly dynamoService: DynamoService
   ) { }
 
   async verifyWebhookSignature(signature: string, webhookSecret: string): Promise<boolean> {
@@ -60,6 +58,8 @@ export class WebhooksService {
       throw error;
     }
   }
+
+
   private async handleMessageSent(data: any) {
     try {
       const {
@@ -105,7 +105,10 @@ export class WebhooksService {
           const emailResponse = await this.emailService.sendEmail(
             recipientEmail,
             emailSubject,
-            payload.message);
+            payload.message,
+            undefined,  // attachments parameter
+            recipientUser.metadata.role  // pass the recipient's role
+          );
 
           this.configService.set(emailResponse.threadId, {
             sender: this.sendbirdService.getCurrentUser(),
@@ -139,6 +142,7 @@ export class WebhooksService {
             emailSubject,
             `${sender.nickname} shared a file with you:`,
             [{ filename: payload.url, data: image.data }],
+            recipientUser.metadata.role  // pass the recipient's role
           );
 
           this.configService.set(emailResponse.threadId, {
@@ -158,7 +162,6 @@ export class WebhooksService {
     } catch (error) {
       this.logger.error(`Error handling new message: ${error.message}`, error.stack);
       if ([400300, 400301, 400302, 400310].includes(error.code)) {
-        // this.configService.set(data.sender.userId, {});
         this.sendbirdService.reconnect();
       }
       // Don't throw the error to prevent webhook failure
@@ -168,68 +171,52 @@ export class WebhooksService {
   }
 
   private async getRecipientUserInfoFromDatabase(userId: string, role?: 'attorney' | 'client'): Promise<any> {
-    const supabase = this.supabaseService.getClient();
     console.log(role);
 
     // If role is specified, only check that table
     if (role) {
-      const { data, error } = await supabase
-        .from(role === 'attorney' ? 'attorneys' : 'users')
-        .select('email')
-        .eq('id', userId)
-        .single();
-
-      if (error) {
+      const tableName = role === 'attorney' ? 'attorneys' : 'users';
+      try {
+        const result = await this.dynamoService.getItem(tableName, { id: userId });
+        if (result) {
+          return result.email || null;
+        }
+        return null;
+      } catch (error) {
         this.logger.error(`Error fetching email for user ${userId}: ${error.message}`);
         return null;
       }
-
-      return data?.email || null;
     }
 
     // If no role is specified, check attorneys table first, then users table
-    const { data: attorneyData, error: attorneyError } = await supabase
-      .from('attorneys')
-      .select('email')
-      .eq('id', userId)
-      .single();
+    try {
+      const attorneyResult = await this.dynamoService.getItem('attorneys', { id: userId });
+      if (attorneyResult && attorneyResult.email) {
+        return attorneyResult.email;
+      }
 
-    if (!attorneyError && attorneyData?.email) {
-      return attorneyData.email
-    }
-
-    // If not found in attorneys table or there was an error, check users table
-    const { data: userData, error: userError } = await supabase
-      .from('users')
-      .select('email')
-      .eq('id', userId)
-      .single();
-
-    if (userError) {
-      this.logger.error(`Error fetching email for user ${userId} from both tables`);
+      // If not found in attorneys table, check users table
+      const userResult = await this.dynamoService.getItem('users', { id: userId });
+      if (userResult) {
+        return userResult.email || null;
+      }
+      return null;
+    } catch (error) {
+      this.logger.error(`Error fetching email for user ${userId} from both tables: ${error.message}`);
       return null;
     }
-
-    return userData?.email || null;
   }
 
   private async getSenderInfoFromDatabase(userId: string): Promise<any> {
-    const supabase = this.supabaseService.getClient();
-
-
-    const { data: attorneyData, error: attorneyError } = await supabase
-      .from('attorneys')
-      .select('firmName')
-      .eq('id', userId)
-      .single();
-
-    if (!attorneyError && attorneyData?.firmName) {
-      return attorneyData.firmName
+    try {
+      const attorneyResult = await this.dynamoService.getItem('attorneys', { id: userId });
+      if (attorneyResult && attorneyResult.firmName) {
+        return attorneyResult.firmName;
+      }
+      return null;
+    } catch (error) {
+      this.logger.error(`Error fetching firm name for attorney ${userId}: ${error.message}`);
+      return null;
     }
-
-    return attorneyData?.firmName || null;
   }
-
 }
-
-
