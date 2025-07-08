@@ -39,13 +39,15 @@ export class WebhooksService {
       }
 
       switch (payload.category) {
-        case 'group_channel:message_send':
+        case 'group_channel:message_send': {
           const messagePayload = { channel: payload.channel, payload: payload.payload, sender: payload.sender, type: payload.type, url: payload.url };
           await this.handleMessageSent(messagePayload);
           break;
-        case 'group_channel:file':
+        }
+        case 'group_channel:file': {
           await this.handleMessageSent(payload); // File uploads are handled the same way as messages
           break;
+        }
         default:
           this.logger.warn(
             `Unhandled webhook event category: ${payload.category}`,
@@ -74,6 +76,10 @@ export class WebhooksService {
         return { success: false };
       }
 
+      // Get case title for email subject
+      const caseTitle = await this.getCaseTitle(channel.channel_url);
+      const emailSubject = `New messages for case: ${caseTitle}`;
+
       // Get channel members except the sender
       const members = await this.sendbirdService.getGroupChannelMembers(sender.user_id, channel.channel_url);
       const recipients = members.filter(member => member.userId !== sender.user_id);
@@ -90,26 +96,17 @@ export class WebhooksService {
           continue;
         }
 
-        // Create dynamic subject line based on recipient's role
-        let emailSubject = 'Legal Rescue notifications: New message from ' + sender.nickname;
-
-        if (recipientUser.metadata.role === 'client') {
-          const firmName = await this.getSenderInfoFromDatabase(sender.user_id);
-          emailSubject = `New message from an attorney: ${sender.nickname} - ${firmName || ''}`;
-        } else if (recipientUser.metadata.role === 'attorney') {
-          emailSubject = `New message from a client: ${sender.nickname}`;
-        }
-        // For other roles, the default subject line is used
-
         if (payload.message) {
           const emailResponse = await this.emailService.sendEmail(
             recipientEmail,
             emailSubject,
             payload.message,
             undefined,  // attachments parameter
-            recipientUser.metadata.role  // pass the recipient's role
+            recipientUser.metadata.role,  // pass the recipient's role
+            channel.channel_url // pass channelUrl for thread grouping
           );
 
+          // IMPORTANT: Keep the original configService mapping for email replies
           this.configService.set(emailResponse.threadId, {
             sender: this.sendbirdService.getCurrentUser(),
             recipient: recipientUser,
@@ -142,9 +139,11 @@ export class WebhooksService {
             emailSubject,
             `${sender.nickname} shared a file with you:`,
             [{ filename: payload.url, data: image.data }],
-            recipientUser.metadata.role  // pass the recipient's role
+            recipientUser.metadata.role,  // pass the recipient's role
+            channel.channel_url // pass channelUrl for thread grouping
           );
 
+          // IMPORTANT: Keep the original configService mapping for email replies
           this.configService.set(emailResponse.threadId, {
             sender: this.sendbirdService.getCurrentUser(),
             recipient: recipientUser,
@@ -168,6 +167,36 @@ export class WebhooksService {
     }
 
     return { success: true };
+  }
+
+  private async getCaseTitle(channelUrl: string): Promise<string> {
+    try {
+      // Query case interests using channel_url GSI
+      const result = await this.dynamoService.query(
+        'case_interests',
+        '#channel_url = :channel_url',
+        { '#channel_url': 'channel_url' },
+        { ':channel_url': channelUrl },
+        'ChannelUrlIndex'  // Use the GSI
+      );
+
+      if (!result.items || result.items.length === 0) {
+        return 'Legal Consultation';
+      }
+
+      const interest = result.items[0];
+      
+      // Get AI case submission for the title
+      const aiCaseData = await this.dynamoService.getItem(
+        'ai_case_submissions',
+        { case_submission_id: interest.case_id }
+      );
+
+      return aiCaseData?.title || 'Legal Consultation';
+    } catch (error) {
+      this.logger.error(`Error fetching case title for channel ${channelUrl}: ${error.message}`);
+      return 'Legal Consultation';
+    }
   }
 
   private async getRecipientUserInfoFromDatabase(userId: string, role?: 'attorney' | 'client'): Promise<any> {

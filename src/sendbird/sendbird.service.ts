@@ -611,8 +611,8 @@ export class SendbirdService {
 
   async createChannelMetadata(
     channelUrl: string,
-    caseId: string,
-    fullNames: string,
+    key: string,
+    value: string,
   ): Promise<any> {
     console.log("creating metadata")
     try {
@@ -620,10 +620,64 @@ export class SendbirdService {
       const apiToken = this.configService.get<string>('sendbird.apiToken')!;
 
       const metadata = {
-        [caseId]: fullNames
+        [key]: value
       };
 
-      const response = await axios.post(
+      // Try to update first (in case metadata already exists)
+      try {
+        const updateResponse = await axios.put(
+          `https://api-${appId}.sendbird.com/v3/group_channels/${channelUrl}/metadata`,
+          {
+            metadata,
+            include_ts: true
+          },
+          {
+            headers: {
+              'Api-Token': apiToken,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+        console.log("response", updateResponse.data)
+        return updateResponse.data;
+      } catch (updateError) {
+        // If update fails, try to create
+        const response = await axios.post(
+          `https://api-${appId}.sendbird.com/v3/group_channels/${channelUrl}/metadata`,
+          {
+            metadata,
+            include_ts: true
+          },
+          {
+            headers: {
+              'Api-Token': apiToken,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+        console.log("response", response.data)
+        return response.data;
+      }
+    } catch (error) {
+      this.logger.error(`Failed to create/update channel metadata: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  async updateChannelMetadata(
+    channelUrl: string,
+    key: string,
+    value: string,
+  ): Promise<any> {
+    try {
+      const appId = this.configService.get<string>('sendbird.appId')!;
+      const apiToken = this.configService.get<string>('sendbird.apiToken')!;
+
+      const metadata = {
+        [key]: value
+      };
+
+      const response = await axios.put(
         `https://api-${appId}.sendbird.com/v3/group_channels/${channelUrl}/metadata`,
         {
           metadata,
@@ -636,11 +690,10 @@ export class SendbirdService {
           }
         }
       );
-      console.log("response", response.data)
 
       return response.data;
     } catch (error) {
-      this.logger.error(`Failed to create channel metadata: ${error.message}`, error.stack);
+      this.logger.error(`Failed to update channel metadata: ${error.message}`, error.stack);
       throw error;
     }
   }
@@ -695,6 +748,33 @@ export class SendbirdService {
     } catch (error) {
       this.logger.error(`Failed to get channel metadata by key: ${error.message}`, error.stack);
       throw error;
+    }
+  }
+
+  // Find a channel by its email_thread_id metadata
+  async findChannelByThreadId(threadId: string): Promise<string | null> {
+    try {
+      const appId = this.configService.get<string>('sendbird.appId')!;
+      const apiToken = this.configService.get<string>('sendbird.apiToken')!;
+      // List all group channels (pagination may be needed for large orgs)
+      const response = await axios.get(
+        `https://api-${appId}.sendbird.com/v3/group_channels`,
+        {
+          headers: {
+            'Api-Token': apiToken
+          }
+        }
+      );
+      const channels = response.data.channels || [];
+      for (const channel of channels) {
+        if (channel.metadata && channel.metadata.email_thread_id === threadId) {
+          return channel.channel_url;
+        }
+      }
+      return null;
+    } catch (error) {
+      this.logger.error(`Failed to find channel by threadId: ${error.message}`, error.stack);
+      return null;
     }
   }
 }
