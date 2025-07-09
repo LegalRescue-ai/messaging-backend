@@ -275,10 +275,28 @@ export class EmailService {
     if (html.includes('> ') && !html.includes('<')) {
       // This is already plaintext with quote indicators
 
-      // Extract only the content before the first "On ... wrote:" line
-      const onWrotePattern = /On\s.*wrote:[\s\S]*/i;
-      let text = html.replace(onWrotePattern, '');
+      // Extract only the content before various quote patterns
+      const quotePatterns = [
+        /On\s.*wrote:[\s\S]*/i,                    // Gmail/Standard: "On ... wrote:"
+        /\n\s*_{5,}\s*\n\s*From:[\s\S]*/i,        // Outlook: Underscores followed by From: line (most specific)
+        /_{5,}\s*[\r\n]\s*From:[\s\S]*/i,         // Alternative Outlook format
+        /From:.*Sent:.*To:.*Subject:[\s\S]*/i,    // Outlook: "From: ... Sent: ... To: ... Subject:"
+        /-----Original Message-----[\s\S]*/i,      // Outlook: "-----Original Message-----"
+        /_{10,}[\s\S]*/,                          // Outlook: Long underscore lines (like ________________________________)
+        /From:.*[\r\n].*Sent:[\s\S]*/i           // Outlook Web: "From: ... Sent: ..."
+      ];
+      
+      let text = html;
+      for (const pattern of quotePatterns) {
+        const beforeReplace = text;
+        text = text.replace(pattern, '');
+        // If replacement was successful and we have content, stop
+        if (text !== beforeReplace && text.trim()) break;
+      }
 
+      // Additional cleanup for any remaining quoted content
+      text = text.replace(/^>.*$/gm, ''); // Remove lines starting with >
+      
       // If there's nothing left, just return the first line
       if (!text.trim()) {
         const firstLine = html.split('\n')[0];
@@ -305,8 +323,15 @@ export class EmailService {
         }
       });
 
-      // Remove all quote elements
-      const quoteSelectors = ['.gmail_quote', 'blockquote'];
+      // Remove all quote elements (enhanced for Outlook)
+      const quoteSelectors = [
+        '.gmail_quote', 
+        'blockquote',
+        '.OutlookMessageHeader',           // Outlook Web
+        '.MsoNormal[style*="border"]',     // Outlook desktop quoted content
+        '[class*="mso"]',                  // Microsoft Office classes
+        '.elementToProof'                  // Outlook Web App
+      ];
       quoteSelectors.forEach(selector => {
         const quotes = document.querySelectorAll(selector);
         quotes.forEach(el => el.remove());
@@ -322,17 +347,46 @@ export class EmailService {
       // Extract text
       let text = document.body.textContent || '';
 
-      // Remove any "On ... wrote:" lines and everything after
-      const onWrotePattern = /On\s.*wrote:[\s\S]*/i;
-      text = text.replace(onWrotePattern, '');
+      // Remove various quote patterns (enhanced for Outlook) - most specific first
+      const quotePatterns = [
+        /\n\s*_{5,}\s*\n\s*From:[\s\S]*/i,        // Underscores followed by From: line (most specific)
+        /_{5,}\s*[\r\n]\s*From:[\s\S]*/i,         // Alternative Outlook format
+        /On\s.*wrote:[\s\S]*/i,                    // Gmail/Standard
+        /From:.*Sent:.*To:.*Subject:[\s\S]*/i,    // Outlook desktop
+        /-----Original Message-----[\s\S]*/i,      // Outlook
+        /_{10,}[\s\S]*/,                          // Long underscore lines (like ________________________________)
+        /From:.*[\r\n].*Sent:[\s\S]*/i,          // Outlook Web
+        /\[cid:.*\]/g                             // Remove CID references
+      ];
+      
+      for (const pattern of quotePatterns) {
+        const beforeReplace = text;
+        text = text.replace(pattern, '');
+        // If replacement was successful and we have content, stop
+        if (text !== beforeReplace && text.trim()) break;
+      }
 
       return text.trim();
     } catch (error:any) {
     console.log(error)
-      // Fallback for any errors
-      // Extract only the content before the first "On ... wrote:" line
-      const onWrotePattern = /On\s.*wrote:[\s\S]*/i;
-      let text = html.replace(onWrotePattern, '');
+      // Fallback for any errors (enhanced for Outlook)
+      const quotePatterns = [
+        /\n\s*_{5,}\s*\n\s*From:[\s\S]*/i,        // Underscores followed by From: line (most specific)
+        /_{5,}\s*[\r\n]\s*From:[\s\S]*/i,         // Alternative Outlook format
+        /On\s.*wrote:[\s\S]*/i,
+        /From:.*Sent:.*To:.*Subject:[\s\S]*/i,
+        /-----Original Message-----[\s\S]*/i,
+        /_{10,}[\s\S]*/,                          // Long underscore lines
+        /From:.*[\r\n].*Sent:[\s\S]*/i
+      ];
+      
+      let text = html;
+      for (const pattern of quotePatterns) {
+        const beforeReplace = text;
+        text = text.replace(pattern, '');
+        // If replacement was successful and we have content, stop
+        if (text !== beforeReplace && text.trim()) break;
+      }
 
       // Also remove any quoted lines starting with ">"
       text = text.replace(/^>.*$/gm, '');
