@@ -70,6 +70,8 @@ export class EmailService {
       for (const email of messages) {
         if (!email || !email.id) continue;
         
+        let emailProcessed = false;
+        
         // Method 1: Try original configService mapping first (for backward compatibility)
         if (this.configService.get(email.threadId)) {
           try {
@@ -81,6 +83,7 @@ export class EmailService {
                 await this.sendbirdService.sendMessage(channel.channel_url, recipient.user_id, emailMessage.body);
                 this.configService.set(email.threadId, null);
                 this.logger.log(`Processed email reply via configService mapping for channel ${channel.channel_url}`);
+                emailProcessed = true;
               }
             }
           } catch (sendbirdError) {
@@ -98,13 +101,34 @@ export class EmailService {
                 // Use a system user for channel metadata replies
                 await this.sendbirdService.sendMessage(channelUrl, 'system', emailMessage.body);
                 this.logger.log(`Processed email reply via channel metadata for channel ${channelUrl}`);
+                emailProcessed = true;
               }
             }
           }
         }
+
+        // Mark email as read after successful processing to prevent duplicate processing
+        if (emailProcessed) {
+          await this.markEmailAsRead(email.id);
+        }
       }
     } catch (error) {
       this.logger.error(`Error receiving emails: ${error.message}`, error.stack);
+    }
+  }
+
+  private async markEmailAsRead(messageId: string): Promise<void> {
+    try {
+      await this.gmail.users.messages.modify({
+        userId: 'me',
+        id: messageId,
+        requestBody: {
+          removeLabelIds: ['UNREAD']
+        }
+      });
+      this.logger.log(`Marked email ${messageId} as read`);
+    } catch (error) {
+      this.logger.error(`Error marking email ${messageId} as read: ${error.message}`, error.stack);
     }
   }
 
