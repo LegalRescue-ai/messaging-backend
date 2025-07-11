@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable prettier/prettier */
 import { Test, TestingModule } from '@nestjs/testing';
 import { MessagesController } from './messages.controller';
 import { SendbirdService } from '../sendbird/sendbird.service';
@@ -6,7 +8,6 @@ import { ReactionDto } from './dto/reaction.dto';
 
 describe('MessagesController', () => {
   let controller: MessagesController;
-  let sendbirdService: SendbirdService;
 
   const mockSendbirdService = {
     sendMessage: jest.fn((channelUrl: string, userId: string, message: string, fileUrl?: string) => {
@@ -32,7 +33,6 @@ describe('MessagesController', () => {
     }).compile();
 
     controller = module.get<MessagesController>(MessagesController);
-    sendbirdService = module.get<SendbirdService>(SendbirdService);
     
     // Clear all mock calls before each test
     jest.clearAllMocks();
@@ -100,6 +100,7 @@ describe('MessagesController', () => {
   describe('getMessages', () => {
     it('should get messages successfully', async () => {
       const channelUrl = 'test-channel';
+      const userId = 'test-user';
       const mockMessages = [
         { messageId: 1, message: 'Test 1' },
         { messageId: 2, message: 'Test 2' }
@@ -107,11 +108,12 @@ describe('MessagesController', () => {
 
       mockSendbirdService.getMessages.mockResolvedValueOnce(mockMessages);
 
-      const result = await controller.getMessages(channelUrl);
+      const result = await controller.getMessages(channelUrl, userId);
 
       expect(result).toBe(mockMessages);
       expect(mockSendbirdService.getMessages).toHaveBeenCalledWith(
         channelUrl,
+        userId,
         undefined,
         undefined,
         undefined

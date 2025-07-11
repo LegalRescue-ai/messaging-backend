@@ -41,13 +41,15 @@ export class WebhooksService {
       }
 
       switch (payload.category) {
-        case 'group_channel:message_send':
+        case 'group_channel:message_send': {
           const messagePayload = { channel: payload.channel, payload: payload.payload, sender: payload.sender, type: payload.type, url: payload.url };
           await this.handleMessageSent(messagePayload);
           break;
-        case 'group_channel:file':
+        }
+        case 'group_channel:file': {
           await this.handleMessageSent(payload); // File uploads are handled the same way as messages
           break;
+        }
         default:
           this.logger.warn(
             `Unhandled webhook event category: ${payload.category}`,
@@ -60,6 +62,7 @@ export class WebhooksService {
       throw error;
     }
   }
+
   private async handleMessageSent(data: any) {
     try {
       const {
@@ -73,6 +76,10 @@ export class WebhooksService {
         this.logger.error('Message sent without sender information');
         return { success: false };
       }
+
+      // Get case title for email subject
+      const caseTitle = await this.getCaseTitle(channel.channel_url);
+      const emailSubject = `New messages for case: ${caseTitle}`;
 
       // Get channel members except the sender
       const members = await this.sendbirdService.getGroupChannelMembers(sender.user_id, channel.channel_url);
@@ -90,23 +97,17 @@ export class WebhooksService {
           continue;
         }
 
-        // Create dynamic subject line based on recipient's role
-        let emailSubject = 'Legal Rescue notifications: New message from ' + sender.nickname;
-
-        if (recipientUser.metadata.role === 'client') {
-          const firmName = await this.getSenderInfoFromDatabase(sender.user_id);
-          emailSubject = `New message from an attorney: ${sender.nickname} - ${firmName || ''}`;
-        } else if (recipientUser.metadata.role === 'attorney') {
-          emailSubject = `New message from a client: ${sender.nickname}`;
-        }
-        // For other roles, the default subject line is used
-
         if (payload.message) {
           const emailResponse = await this.emailService.sendEmail(
             recipientEmail,
             emailSubject,
-            payload.message);
+            payload.message,
+            undefined,  // attachments parameter
+            recipientUser.metadata.role,  // pass the recipient's role
+            channel.channel_url // pass channelUrl for thread grouping
+          );
 
+          // IMPORTANT: Keep the original configService mapping for email replies
           this.configService.set(emailResponse.threadId, {
             sender: this.sendbirdService.getCurrentUser(),
             recipient: recipientUser,
@@ -139,8 +140,11 @@ export class WebhooksService {
             emailSubject,
             `${sender.nickname} shared a file with you:`,
             [{ filename: payload.url, data: image.data }],
+            recipientUser.metadata.role,  // pass the recipient's role
+            channel.channel_url // pass channelUrl for thread grouping
           );
 
+          // IMPORTANT: Keep the original configService mapping for email replies
           this.configService.set(emailResponse.threadId, {
             sender: this.sendbirdService.getCurrentUser(),
             recipient: recipientUser,
@@ -158,7 +162,6 @@ export class WebhooksService {
     } catch (error) {
       this.logger.error(`Error handling new message: ${error.message}`, error.stack);
       if ([400300, 400301, 400302, 400310].includes(error.code)) {
-        // this.configService.set(data.sender.userId, {});
         this.sendbirdService.reconnect();
       }
       // Don't throw the error to prevent webhook failure
@@ -167,67 +170,118 @@ export class WebhooksService {
     return { success: true };
   }
 
+  private async getCaseTitle(channelUrl: string): Promise<string> {
+    try {
+      const supabase = this.supabaseService.getClient();
+      
+      // Query case interests using channel_url
+      const { data: interests, error: interestsError } = await supabase
+        .from('case_interests')
+        .select('case_id')
+        .eq('channel_url', channelUrl);
+
+      if (interestsError || !interests || interests.length === 0) {
+        this.logger.warn(`No case interests found for channel ${channelUrl}`);
+        return 'Legal Consultation';
+      }
+
+      const interest = interests[0];
+      
+      // Get AI case submission for the title
+      const { data: aiCaseData, error: aiCaseError } = await supabase
+        .from('ai_case_submissions')
+        .select('title')
+        .eq('case_submission_id', interest.case_id)
+        .single();
+
+      if (aiCaseError) {
+        this.logger.warn(`No AI case submission found for case ${interest.case_id}`);
+        return 'Legal Consultation';
+      }
+
+      return aiCaseData?.title || 'Legal Consultation';
+    } catch (error) {
+      this.logger.error(`Error fetching case title for channel ${channelUrl}: ${error.message}`);
+      return 'Legal Consultation';
+    }
+  }
+
   private async getRecipientUserInfoFromDatabase(userId: string, role?: 'attorney' | 'client'): Promise<any> {
     const supabase = this.supabaseService.getClient();
     console.log(role);
 
     // If role is specified, only check that table
     if (role) {
-      const { data, error } = await supabase
-        .from(role === 'attorney' ? 'attorneys' : 'users')
+      const tableName = role === 'attorney' ? 'attorneys' : 'users';
+      try {
+        const { data, error } = await supabase
+          .from(tableName)
+          .select('email')
+          .eq('id', userId)
+          .single();
+
+        if (error) {
+          this.logger.error(`Error fetching email for user ${userId}: ${error.message}`);
+          return null;
+        }
+
+        return data?.email || null;
+      } catch (error) {
+        this.logger.error(`Error fetching email for user ${userId}: ${error.message}`);
+        return null;
+      }
+    }
+
+    // If no role is specified, check attorneys table first, then users table
+    try {
+      const { data: attorneyData, error: attorneyError } = await supabase
+        .from('attorneys')
         .select('email')
         .eq('id', userId)
         .single();
 
-      if (error) {
-        this.logger.error(`Error fetching email for user ${userId}: ${error.message}`);
+      if (!attorneyError && attorneyData?.email) {
+        return attorneyData.email;
+      }
+
+      // If not found in attorneys table, check users table
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('email')
+        .eq('id', userId)
+        .single();
+
+      if (userError) {
+        this.logger.error(`Error fetching email for user ${userId} from both tables: ${userError.message}`);
         return null;
       }
 
-      return data?.email || null;
-    }
-
-    // If no role is specified, check attorneys table first, then users table
-    const { data: attorneyData, error: attorneyError } = await supabase
-      .from('attorneys')
-      .select('email')
-      .eq('id', userId)
-      .single();
-
-    if (!attorneyError && attorneyData?.email) {
-      return attorneyData.email
-    }
-
-    // If not found in attorneys table or there was an error, check users table
-    const { data: userData, error: userError } = await supabase
-      .from('users')
-      .select('email')
-      .eq('id', userId)
-      .single();
-
-    if (userError) {
-      this.logger.error(`Error fetching email for user ${userId} from both tables`);
+      return userData?.email || null;
+    } catch (error) {
+      this.logger.error(`Error fetching email for user ${userId} from both tables: ${error.message}`);
       return null;
     }
-
-    return userData?.email || null;
   }
 
   private async getSenderInfoFromDatabase(userId: string): Promise<any> {
     const supabase = this.supabaseService.getClient();
 
+    try {
+      const { data: attorneyData, error: attorneyError } = await supabase
+        .from('attorneys')
+        .select('firmName')
+        .eq('id', userId)
+        .single();
 
-    const { data: attorneyData, error: attorneyError } = await supabase
-      .from('attorneys')
-      .select('firmName')
-      .eq('id', userId)
-      .single();
+      if (!attorneyError && attorneyData?.firmName) {
+        return attorneyData.firmName;
+      }
 
-    if (!attorneyError && attorneyData?.firmName) {
-      return attorneyData.firmName
+      return null;
+    } catch (error) {
+      this.logger.error(`Error fetching firm name for attorney ${userId}: ${error.message}`);
+      return null;
     }
-
-    return attorneyData?.firmName || null;
   }
 
 }
