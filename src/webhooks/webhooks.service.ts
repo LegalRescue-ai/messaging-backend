@@ -174,10 +174,17 @@ export class WebhooksService {
     try {
       const supabase = this.supabaseService.getClient();
       
-      // Query case interests using channel_url
+      // Query case interests with joined AI case submission data
       const { data: interests, error: interestsError } = await supabase
         .from('case_interests')
-        .select('case_id')
+        .select(`
+          case_id,
+          case_submissions!inner(
+            AI_case_submission!inner(
+              title
+            )
+          )
+        `)
         .eq('channel_url', channelUrl);
 
       if (interestsError || !interests || interests.length === 0) {
@@ -187,19 +194,17 @@ export class WebhooksService {
 
       const interest = interests[0];
       
-      // Get AI case submission for the title
-      const { data: aiCaseData, error: aiCaseError } = await supabase
-        .from('ai_case_submissions')
-        .select('title')
-        .eq('case_submission_id', interest.case_id)
-        .single();
+      // Handle case_submissions (could be array or single object)
+      const caseSubmission = Array.isArray(interest.case_submissions) 
+        ? interest.case_submissions[0] 
+        : interest.case_submissions;
 
-      if (aiCaseError) {
-        this.logger.warn(`No AI case submission found for case ${interest.case_id}`);
-        return 'Legal Consultation';
-      }
+      // Handle AI_case_submission (could be array or single object)
+      const aiCaseSubmission = Array.isArray(caseSubmission?.AI_case_submission)
+        ? caseSubmission.AI_case_submission[0]
+        : caseSubmission?.AI_case_submission;
 
-      return aiCaseData?.title || 'Legal Consultation';
+      return aiCaseSubmission?.title || 'Legal Consultation';
     } catch (error) {
       this.logger.error(`Error fetching case title for channel ${channelUrl}: ${error.message}`);
       return 'Legal Consultation';
