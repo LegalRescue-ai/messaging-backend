@@ -50,6 +50,10 @@ export class WebhooksService {
           await this.handleMessageSent(payload); // File uploads are handled the same way as messages
           break;
         }
+        case 'group_channel:leave': {
+          await this.handleChannelLeave(payload);
+          break;
+        }
         default:
           this.logger.warn(
             `Unhandled webhook event category: ${payload.category}`,
@@ -60,6 +64,56 @@ export class WebhooksService {
     } catch (error) {
       this.logger.error(`Error handling webhook event: ${error.message}`, error.stack);
       throw error;
+    }
+  }
+
+  private async handleChannelLeave(data: any) {
+    try {
+      const { channel } = data;
+      const channelUrl = channel.channel_url;
+
+      if (!channelUrl) {
+        this.logger.error('Channel leave event without channel URL');
+        return { success: false };
+      }
+
+      this.logger.log(`Handling channel leave for channel: ${channelUrl}`);
+
+      // Delete channel from Sendbird
+      const channelDeleted = await this.sendbirdService.deleteChannel(channelUrl);
+      if (!channelDeleted) {
+        this.logger.error(`Failed to delete channel ${channelUrl} from Sendbird`);
+        return { success: false };
+      }
+
+      // Clean up database records
+      await this.cleanupChannelData(channelUrl);
+
+      this.logger.log(`Successfully handled channel leave for channel: ${channelUrl}`);
+      return { success: true };
+    } catch (error) {
+      this.logger.error(`Error handling channel leave: ${error.message}`, error.stack);
+      return { success: false };
+    }
+  }
+
+  private async cleanupChannelData(channelUrl: string) {
+    try {
+      const supabase = this.supabaseService.getClient();
+      
+      // Delete from case_interests table
+      const { error: interestsError } = await supabase
+        .from('case_interests')
+        .delete()
+        .eq('channel_url', channelUrl);
+
+      if (interestsError) {
+        this.logger.error(`Error deleting case interests for channel ${channelUrl}: ${interestsError.message}`);
+      } else {
+        this.logger.log(`Successfully cleaned up case interests for channel: ${channelUrl}`);
+      }
+    } catch (error) {
+      this.logger.error(`Error cleaning up channel data for ${channelUrl}: ${error.message}`, error.stack);
     }
   }
 
@@ -204,7 +258,7 @@ export class WebhooksService {
         ? caseSubmission.AI_case_submission[0]
         : caseSubmission?.AI_case_submission;
 
-      return aiCaseSubmission?.title || 'Legal Consultation';
+      return (aiCaseSubmission?.title as string) || 'Legal Consultation';
     } catch (error) {
       this.logger.error(`Error fetching case title for channel ${channelUrl}: ${error.message}`);
       return 'Legal Consultation';
