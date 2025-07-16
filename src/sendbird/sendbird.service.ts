@@ -777,4 +777,29 @@ export class SendbirdService {
       return null;
     }
   }
+
+  // Delete a channel by its URL
+  async deleteChannel(channelUrl: string): Promise<boolean> {
+    try {
+      const appId = this.configService.get<string>('sendbird.appId')!;
+      const apiToken = this.configService.get<string>('sendbird.apiToken')!;
+      
+      this.logger.log(`Attempting to delete channel: ${channelUrl}`);
+      
+      await axios.delete(
+        `https://api-${appId}.sendbird.com/v3/group_channels/${channelUrl}`,
+        {
+          headers: {
+            'Api-Token': apiToken
+          }
+        }
+      );
+      
+      this.logger.log(`Successfully deleted channel: ${channelUrl}`);
+      return true;
+    } catch (error) {
+      this.logger.error(`Failed to delete channel ${channelUrl}: ${error.message}`, error.stack);
+      return false;
+    }
+  }
 }

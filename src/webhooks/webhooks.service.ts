@@ -48,6 +48,10 @@ export class WebhooksService {
           await this.handleMessageSent(payload); // File uploads are handled the same way as messages
           break;
         }
+        case 'group_channel:leave': {
+          await this.handleChannelLeave(payload);
+          break;
+        }
         default:
           this.logger.warn(
             `Unhandled webhook event category: ${payload.category}`,
@@ -61,6 +65,66 @@ export class WebhooksService {
     }
   }
 
+  private async handleChannelLeave(payload: any): Promise<{ success: boolean }> {
+    try {
+      const channelUrl = payload.data?.channel?.channel_url;
+      
+      if (!channelUrl) {
+        this.logger.error('Channel leave event received without channel URL');
+        return { success: false };
+      }
+
+      this.logger.log(`Handling channel leave event for channel: ${channelUrl}`);
+
+      // Delete the channel from Sendbird
+      const deleteSuccess = await this.sendbirdService.deleteChannel(channelUrl);
+      
+      if (!deleteSuccess) {
+        this.logger.error(`Failed to delete channel: ${channelUrl}`);
+        return { success: false };
+      }
+
+      // Clean up database records
+      await this.cleanupChannelData(channelUrl);
+
+      this.logger.log(`Successfully handled channel leave event for channel: ${channelUrl}`);
+      return { success: true };
+    } catch (error) {
+      this.logger.error(`Error handling channel leave event: ${error.message}`, error.stack);
+      return { success: false };
+    }
+  }
+
+  private async cleanupChannelData(channelUrl: string): Promise<void> {
+    try {
+      this.logger.log(`Cleaning up database records for channel: ${channelUrl}`);
+      
+      // Query for records with this channel_url
+      const result = await this.dynamoService.query(
+        'case_interests',
+        '#channel_url = :channel_url',
+        { '#channel_url': 'channel_url' },
+        { ':channel_url': channelUrl },
+        'ChannelUrlIndex'  // Use the GSI
+      );
+
+      if (result.items && result.items.length > 0) {
+        // Delete each record found
+        for (const item of result.items) {
+          await this.dynamoService.deleteItem('case_interests', {
+            case_id: item.case_id,
+            interest_id: item.interest_id
+          });
+          this.logger.log(`Deleted case_interests record: ${item.case_id}/${item.interest_id}`);
+        }
+      }
+
+      this.logger.log(`Successfully cleaned up database records for channel: ${channelUrl}`);
+    } catch (error) {
+      this.logger.error(`Error cleaning up database records for channel ${channelUrl}: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
 
   private async handleMessageSent(data: any) {
     try {
@@ -192,7 +256,7 @@ export class WebhooksService {
         { case_submission_id: interest.case_id }
       );
 
-      return aiCaseData?.title || 'Legal Consultation';
+      return (aiCaseData?.title as string) || 'Legal Consultation';
     } catch (error) {
       this.logger.error(`Error fetching case title for channel ${channelUrl}: ${error.message}`);
       return 'Legal Consultation';
